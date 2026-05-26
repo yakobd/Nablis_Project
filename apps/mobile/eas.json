@@ -13,14 +13,6 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
-      },
-      "env": {
-        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCDATVponSh9YwQQyaQMgy8Qo_DhUfFdso",
-        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "nablis-f9330.firebaseapp.com",
-        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "nablis-f9330",
-        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "nablis-f9330.firebasestorage.app",
-        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "209753387101",
-        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:209753387101:web:14263c6e2420994f909db4"
       }
     },
     "production": {

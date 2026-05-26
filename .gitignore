@@ -17,6 +17,8 @@ build/
 .env
 .env.local
 .env.*.local
+apps/mobile/.env
+apps/web/.env.local
 
 # Logs
 *.log
