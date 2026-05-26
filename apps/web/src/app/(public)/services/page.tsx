@@ -8,7 +8,7 @@ const SERVICES = [
     icon: <span className="text-2xl">🕊️</span>,
     title: "Confession",
     description:
-      "Private one-on-one confession sessions with Aba Gorgorios. Confession is a holy sacrament through which we receive forgiveness, healing, and spiritual renewal in the Orthodox tradition.",
+      "Private one-on-one confession sessions with መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር). Confession is a holy sacrament through which we receive forgiveness, healing, and spiritual renewal in the Orthodox tradition.",
     audience: "All baptized Orthodox Christians",
     features: [
       "Completely private & confidential",
@@ -38,7 +38,7 @@ const SERVICES = [
     icon: <span className="text-2xl">📖</span>,
     title: "Group Bible Study",
     description:
-      "Weekly community-based exploration of the Holy Scriptures guided by Aba Gorgorios. Sessions are interactive, educational, and open to all levels of Orthodox knowledge.",
+      "Weekly community-based exploration of the Holy Scriptures guided by መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር). Sessions are interactive, educational, and open to all levels of Orthodox knowledge.",
     audience: "All community members",
     features: [
       "Every Wednesday evening",
@@ -89,7 +89,7 @@ const PROCESS = [
     step: "04",
     title: "Ongoing Support",
     description:
-      "After your session, Aba Gorgorios remains available for follow-up guidance as part of our ongoing pastoral care.",
+      "After your session, መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር) remains available for follow-up guidance as part of our ongoing pastoral care.",
   },
 ];
 
@@ -180,18 +180,18 @@ export default function ServicesPage() {
                 </p>
                 <div className="space-y-3 mb-5">
                   <a
-                    href="tel:+971564983456"
+                    href="tel:+251912872622"
                     className="flex items-center gap-2.5 text-[#1B2E6B] hover:text-[#F5C518] transition-colors"
                   >
                     <Phone size={14} className="text-[#F5C518]" />
-                    <span className="text-sm font-medium">+971 56 498 3456</span>
+                    <span className="text-sm font-medium">+251912872622</span>
                   </a>
                   <a
-                    href="mailto:info@nablis.com"
+                    href="mailto:nablis.info@gmail.com"
                     className="flex items-center gap-2.5 text-[#1B2E6B] hover:text-[#F5C518] transition-colors"
                   >
                     <Mail size={14} className="text-[#F5C518]" />
-                    <span className="text-sm font-medium">info@nablis.com</span>
+                    <span className="text-sm font-medium">nablis.info@gmail.com</span>
                   </a>
                 </div>
                 <Link

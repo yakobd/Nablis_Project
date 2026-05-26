@@ -13,7 +13,7 @@ const FALLBACK: BlogCardData[] = [
     content:
       "Fasting is one of the most ancient practices of the Christian church. In the Ethiopian Orthodox tradition, fasting is seen not merely as abstinence from food, but as a spiritual discipline that draws us closer to God through prayer and repentance. When we fast, we acknowledge our dependence on God rather than on the physical sustenance of this world.",
     category: "Teachings",
-    authorName: "Aba Gorgorios",
+    authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
     pinned: true,
     publishAt: null,
     createdAt: null,
@@ -24,7 +24,7 @@ const FALLBACK: BlogCardData[] = [
     content:
       "The doctrine of the Holy Trinity is central to Orthodox Christianity. Understanding the relationship between the Father, the Son, and the Holy Spirit is foundational to our faith and worship. The Ethiopian Orthodox Church holds a distinctive Christological position that reflects centuries of theological reflection.",
     category: "Theology",
-    authorName: "Aba Gorgorios",
+    authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
     pinned: false,
     publishAt: null,
     createdAt: null,
@@ -35,7 +35,7 @@ const FALLBACK: BlogCardData[] = [
     content:
       "There is profound power in gathering together in prayer. When our community comes together to lift our voices and hearts to God, we experience a spiritual unity that transcends individual worship. Community prayer has been a cornerstone of Ethiopian Orthodox life for centuries.",
     category: "Community",
-    authorName: "Aba Gorgorios",
+    authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
     pinned: false,
     publishAt: null,
     createdAt: null,
@@ -46,7 +46,7 @@ const FALLBACK: BlogCardData[] = [
     content:
       "In the Ethiopian Orthodox Tewahedo Church, the veneration of saints is a deeply held tradition. We believe that the saints who have gone before us continue to intercede on our behalf before God, forming a great cloud of witnesses that surrounds us in our earthly journey.",
     category: "Theology",
-    authorName: "Aba Gorgorios",
+    authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
     pinned: false,
     publishAt: null,
     createdAt: null,
@@ -57,7 +57,7 @@ const FALLBACK: BlogCardData[] = [
     content:
       "One of the greatest challenges facing Ethiopian Orthodox families living abroad is raising their children in the faith. Far from the cultural and religious environment of Ethiopia, parents often struggle to pass on the traditions, language, and deep spiritual roots of our church.",
     category: "Family",
-    authorName: "Aba Gorgorios",
+    authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
     pinned: false,
     publishAt: null,
     createdAt: null,
@@ -68,7 +68,7 @@ const FALLBACK: BlogCardData[] = [
     content:
       "Meskel, the feast of the True Cross, is one of the most significant celebrations in the Ethiopian Orthodox calendar. This joyful commemoration marks the discovery of the True Cross by Queen Helena and is observed with great fanfare, bonfires, and communal celebration.",
     category: "Traditions",
-    authorName: "Aba Gorgorios",
+    authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
     pinned: false,
     publishAt: null,
     createdAt: null,
@@ -127,7 +127,7 @@ export default function BlogPage() {
           </h1>
           <p className="text-white/60 max-w-2xl mx-auto text-lg leading-relaxed">
             Spiritual insights, theological reflections, and community stories from
-            Aba Gorgorios and the Nablis Ministry.
+            መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር) and the Nablis Ministry.
           </p>
         </div>
       </section>

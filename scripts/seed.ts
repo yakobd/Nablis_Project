@@ -128,10 +128,10 @@ async function seedUsers() {
       uid: ADMIN_UID,
       email: 'gorgorios@nablis.org',
       password: 'Admin@Nablis2024',
-      displayName: 'Aba Gorgorios',
+      displayName: 'መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)',
       firestoreData: {
         email: 'gorgorios@nablis.org',
-        displayName: 'Aba Gorgorios',
+        displayName: 'መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)',
         photoURL: null,
         role: 'admin',
         status: 'active',
@@ -299,7 +299,7 @@ async function seedBlogPosts() {
   console.log('\n📝  Blog Posts');
   await write('blogPosts', 'blog-001', {
     authorId:   ADMIN_UID,
-    authorName: 'Aba Gorgorios',
+    authorName: 'መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)',
     title:      'Walking in Faith: A Reflection',
     content:    'Faith is not the absence of doubt — it is the courage to move forward despite it. '
               + 'In this reflection, we explore what it means to trust God in uncertain times...',
@@ -313,7 +313,7 @@ async function seedBlogPosts() {
   });
   await write('blogPosts', 'blog-002', {
     authorId:   ADMIN_UID,
-    authorName: 'Aba Gorgorios',
+    authorName: 'መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)',
     title:      'Community Update — May 2026',
     content:    'Dear congregation, we are excited to share updates on our building project '
               + 'and upcoming events for the coming months...',
@@ -438,7 +438,7 @@ async function seedBibleStudies() {
   console.log('\n📚  Bible Studies');
   await write('bibleStudies', 'study-001', {
     title:     'The Gospel of John — Deep Dive',
-    teacher:   'Aba Gorgorios',
+    teacher:   'መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)',
     members:   [MEMBER1_UID, MEMBER2_UID],
     startDate: daysAgo(14),
     materials: [
@@ -449,7 +449,7 @@ async function seedBibleStudies() {
   });
   await write('bibleStudies', 'study-002', {
     title:     'Psalms for Daily Living',
-    teacher:   'Aba Gorgorios',
+    teacher:   'መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)',
     members:   [],
     startDate: daysFromNow(7),
     materials: [],

@@ -9,7 +9,7 @@ const SERVICES = [
     icon: <span className="text-xl">🕊️</span>,
     title: "Confession",
     description:
-      "Private one-on-one confession sessions with Aba Gorgorios for spiritual cleansing and guidance in the Orthodox tradition.",
+      "Private one-on-one confession sessions with መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር) for spiritual cleansing and guidance in the Orthodox tradition.",
     audience: "All baptized Orthodox Christians",
     features: ["Private & confidential", "By appointment only", "Available weekly"],
     href: "/contact",
@@ -54,7 +54,7 @@ const SAMPLE_BLOGS: BlogCardData[] = [
     content:
       "Fasting is one of the most ancient practices of the Christian church. In the Ethiopian Orthodox tradition, fasting is seen not merely as abstinence from food, but as a spiritual discipline that draws us closer to God through prayer and repentance...",
     category: "Teachings",
-    authorName: "Aba Gorgorios",
+    authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
     pinned: true,
     publishAt: null,
     createdAt: null,
@@ -65,7 +65,7 @@ const SAMPLE_BLOGS: BlogCardData[] = [
     content:
       "The doctrine of the Holy Trinity is central to Orthodox Christianity. Understanding the relationship between the Father, the Son, and the Holy Spirit is foundational to our faith and worship...",
     category: "Theology",
-    authorName: "Aba Gorgorios",
+    authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
     publishAt: null,
     createdAt: null,
   },
@@ -75,7 +75,7 @@ const SAMPLE_BLOGS: BlogCardData[] = [
     content:
       "There is profound power in gathering together in prayer. When our community comes together to lift our voices and hearts to God, we experience a spiritual unity that transcends individual worship...",
     category: "Community",
-    authorName: "Aba Gorgorios",
+    authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
     publishAt: null,
     createdAt: null,
   },
@@ -150,11 +150,9 @@ export default function HomePage() {
           <div className="hidden lg:block">
             <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-3xl p-8">
               <div className="flex items-center gap-4 mb-6">
-                <div className="w-16 h-16 rounded-2xl bg-[#F5C518] flex items-center justify-center flex-shrink-0">
-                  <span className="text-[#1B2E6B] font-bold text-3xl leading-none">ን</span>
-                </div>
+                <img src="/Logo-White.png" alt="Nablis" className="h-12 w-auto flex-shrink-0" />
                 <div>
-                  <p className="text-white font-bold text-lg">ናቡስ Ministry</p>
+                  <p className="text-white font-bold text-lg">Nablis Ministry</p>
                   <p className="text-white/50 text-sm">Ethiopian Orthodox • Dubai</p>
                 </div>
               </div>
@@ -177,7 +175,7 @@ export default function HomePage() {
               </div>
               <div className="mt-6 pt-5 border-t border-white/10 flex items-center gap-3">
                 <Phone size={14} className="text-[#F5C518]" />
-                <span className="text-white/70 text-sm">+971 56 498 3456</span>
+                <span className="text-white/70 text-sm">+251912872622</span>
               </div>
             </div>
           </div>
@@ -195,7 +193,7 @@ export default function HomePage() {
               </div>
               {/* Accent badge */}
               <div className="absolute bottom-6 right-0 lg:-right-6 bg-[#F5C518] text-[#1B2E6B] rounded-2xl px-5 py-3 shadow-lg">
-                <p className="font-bold text-sm">Aba Gorgorios</p>
+                <p className="font-bold text-sm">መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)</p>
                 <p className="text-xs font-medium opacity-80">Spiritual Father</p>
               </div>
             </div>
@@ -206,10 +204,10 @@ export default function HomePage() {
                 Meet Our Spiritual Father
               </p>
               <h2 className="text-3xl lg:text-4xl font-bold text-[#1B2E6B] mb-5 leading-tight">
-                Aba Gorgorios — Guiding with Wisdom & Compassion
+                መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር) — Guiding with Wisdom & Compassion
               </h2>
               <p className="text-[#6B7280] leading-relaxed mb-5">
-                With over 15 years of dedicated ministry, Aba Gorgorios has been a beacon of
+                With over 15 years of dedicated ministry, መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር) has been a beacon of
                 faith for the Ethiopian Orthodox community in Dubai. Ordained in the Ethiopian
                 Orthodox Tewahedo Church, he brings deep theological knowledge and heartfelt
                 compassion to every spiritual encounter.
@@ -217,7 +215,7 @@ export default function HomePage() {
               <p className="text-[#6B7280] leading-relaxed mb-8">
                 His ministry focuses on individual spiritual growth, family counseling, and
                 building a strong community of faith far from home. Whether through private
-                confession, group Bible study, or community prayer, Aba Gorgorios walks
+                confession, group Bible study, or community prayer, መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር) walks
                 alongside every member of his flock.
               </p>
               <div className="grid grid-cols-2 gap-4 mb-8">
@@ -313,9 +311,7 @@ export default function HomePage() {
           }}
         />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-[#F5C518] flex items-center justify-center mx-auto mb-6">
-            <span className="text-[#1B2E6B] font-bold text-3xl leading-none">ን</span>
-          </div>
+          <img src="/Logo-White.png" alt="Nablis" className="h-16 w-auto mx-auto mb-6" />
           <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4">
             Take Your Faith With You
           </h2>
@@ -347,7 +343,7 @@ export default function HomePage() {
       <section className="py-10 bg-[#EEF1F8] border-t border-[#E5E7EB]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-center gap-6 sm:gap-12">
           <a
-            href="tel:+971564983456"
+            href="tel:+251912872622"
             className="flex items-center gap-3 text-[#1B2E6B] hover:text-[#F5C518] transition-colors"
           >
             <div className="w-10 h-10 rounded-xl bg-[#1B2E6B] flex items-center justify-center flex-shrink-0">
@@ -355,11 +351,11 @@ export default function HomePage() {
             </div>
             <div>
               <p className="text-xs text-[#9CA3AF]">Call us</p>
-              <p className="font-semibold text-sm">+971 56 498 3456</p>
+              <p className="font-semibold text-sm">+251912872622</p>
             </div>
           </a>
           <a
-            href="mailto:info@nablis.com"
+            href="mailto:nablis.info@gmail.com"
             className="flex items-center gap-3 text-[#1B2E6B] hover:text-[#F5C518] transition-colors"
           >
             <div className="w-10 h-10 rounded-xl bg-[#1B2E6B] flex items-center justify-center flex-shrink-0">
@@ -367,7 +363,7 @@ export default function HomePage() {
             </div>
             <div>
               <p className="text-xs text-[#9CA3AF]">Email us</p>
-              <p className="font-semibold text-sm">info@nablis.com</p>
+              <p className="font-semibold text-sm">nablis.info@gmail.com</p>
             </div>
           </a>
           <Link

@@ -42,10 +42,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-[#1B2E6B] flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-[#F5C518] font-bold text-2xl leading-none">ን</span>
-          </div>
-          <h1 className="text-2xl font-bold text-[#1B2E6B]">ናቡስ Ministry</h1>
+          <img src="/Logo-Blue.png" alt="Nablis" className="h-20 w-auto mx-auto mb-4" />
           <p className="text-[#9CA3AF] text-sm mt-1">Sign in to your account</p>
         </div>
 

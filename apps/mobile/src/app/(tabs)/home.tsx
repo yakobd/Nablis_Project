@@ -518,7 +518,7 @@ function MemberHome() {
       <Modal visible={menuVisible} transparent animationType="slide" onRequestClose={() => setMenuVisible(false)}>
         <TouchableOpacity style={styles.drawerOverlay} activeOpacity={1} onPress={() => setMenuVisible(false)}>
           <View style={styles.drawer}>
-            <Text style={styles.drawerLogo}>ናቡስ</Text>
+            <Text style={styles.drawerLogo}>Nablis</Text>
             {MEMBER_MENU.map((item) => (
               <TouchableOpacity
                 key={item.route}

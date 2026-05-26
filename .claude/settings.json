@@ -21,7 +21,8 @@
       "Bash(taskkill /PID 5212 /F)",
       "PowerShell(Stop-Process -Id 5212 -Force)",
       "PowerShell($connections = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue; $connections | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue; Write-Host \"Killed PID $\\($_.OwningProcess\\)\" })",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/login)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/login)",
+      "Bash(git add *)"
     ]
   }
 }

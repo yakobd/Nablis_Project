@@ -33,13 +33,13 @@ const TIMELINE = [
   {
     year: "2009",
     title: "Ordination",
-    description: "Aba Gorgorios was ordained as a priest in the Ethiopian Orthodox Tewahedo Church.",
+    description: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር) was ordained as a priest in the Ethiopian Orthodox Tewahedo Church.",
   },
   {
     year: "2012",
     title: "Arrival in Dubai",
     description:
-      "Responding to the growing Ethiopian diaspora in the UAE, Aba Gorgorios was sent to Dubai to serve the community.",
+      "Responding to the growing Ethiopian diaspora in the UAE, መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር) was sent to Dubai to serve the community.",
   },
   {
     year: "2015",
@@ -158,9 +158,9 @@ export default function AboutPage() {
               <p className="text-[#F5C518] font-semibold text-sm uppercase tracking-widest mb-2">
                 Our Spiritual Father
               </p>
-              <h2 className="text-3xl font-bold text-[#1B2E6B] mb-4">Aba Gorgorios</h2>
+              <h2 className="text-3xl font-bold text-[#1B2E6B] mb-4">መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)</h2>
               <p className="text-[#6B7280] leading-relaxed mb-4">
-                Aba Gorgorios is a devoted priest of the Ethiopian Orthodox Tewahedo Church with
+                መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር) is a devoted priest of the Ethiopian Orthodox Tewahedo Church with
                 deep theological training and a lifelong commitment to pastoral care. Born and
                 raised in Ethiopia, he studied theology at a renowned Orthodox seminary before
                 being ordained in 2009.

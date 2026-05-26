@@ -48,14 +48,8 @@ export function PublicNavbar() {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-6">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2.5 flex-shrink-0">
-            <div className="w-9 h-9 rounded-xl bg-[#1B2E6B] flex items-center justify-center shadow-sm">
-              <span className="text-[#F5C518] font-bold text-base leading-none">ን</span>
-            </div>
-            <div className="leading-tight">
-              <p className="text-[#1B2E6B] font-bold text-[15px] leading-tight">ናቡስ</p>
-              <p className="text-[10px] text-[#9CA3AF] leading-tight tracking-wide">Nablis Ministry</p>
-            </div>
+          <Link href="/" className="flex items-center flex-shrink-0">
+            <img src="/Logo-Blue.png" alt="Nablis" className="h-12 w-auto" />
           </Link>
 
           {/* Desktop nav */}

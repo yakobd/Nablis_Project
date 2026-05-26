@@ -64,9 +64,9 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   }
 
   return (
-    <div className="flex gap-6 h-full">
+    <div className="flex flex-col md:flex-row gap-6 h-full">
       {/* Sub-nav */}
-      <aside className="w-52 flex-shrink-0 bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-3 self-start sticky top-0">
+      <aside className="w-full md:w-52 flex-shrink-0 bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-3 md:self-start md:sticky md:top-0">
         <SectionLabel>Your Account</SectionLabel>
         {ACCOUNT_LINKS.map((link) => (
           <NavLink key={link.href} {...link} active={isActive(link.href)} />

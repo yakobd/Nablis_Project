@@ -4,7 +4,7 @@
  * Creates 8 accounts in Firebase Auth + Firestore:
  *
  *   SUPER ADMIN (1):
- *     superadmin@nablis.com / Nablis2024!  → role: super_admin  (Aba Gorgorios)
+ *     superadmin@nablis.com / Nablis2024!  → role: super_admin  (መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር))
  *
  *   ADMINS (2):
  *     admin1@nablis.com / Nablis2024!      → role: admin  (Deacon Dawit)
@@ -146,7 +146,7 @@ async function main() {
     uid:                'nablis-superadmin',
     email:              'superadmin@nablis.com',
     password:           'Nablis2024!',
-    displayName:        'Aba Gorgorios',
+    displayName:        'መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)',
     role:               'super_admin',
     status:             'active',
     christianName:      'Gorgorios',
@@ -163,7 +163,7 @@ async function main() {
     uid:                'nablis-admin1',
     email:              'admin1@nablis.com',
     password:           'Nablis2024!',
-    displayName:        'Deacon Dawit',
+    displayName:        'Abenezer',
     role:               'admin',
     status:             'active',
     christianName:      'Dawit',
@@ -178,7 +178,7 @@ async function main() {
     uid:                'nablis-admin2',
     email:              'admin2@nablis.com',
     password:           'Nablis2024!',
-    displayName:        'Deacon Henok',
+    displayName:        'Biniyam',
     role:               'admin',
     status:             'active',
     christianName:      'Henok',
@@ -271,7 +271,7 @@ async function main() {
   // ── Summary ──────────────────────────────────────────────────────────────────
   console.log('\n✅  Done! Created 8 test users:\n');
   console.log('  SUPER ADMIN:');
-  console.log('    superadmin@nablis.com  / Nablis2024!   (Aba Gorgorios)');
+  console.log('    superadmin@nablis.com  / Nablis2024!   (መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር))');
   console.log('\n  ADMINS:');
   console.log('    admin1@nablis.com      / Nablis2024!   (Deacon Dawit)');
   console.log('    admin2@nablis.com      / Nablis2024!   (Deacon Henok)');

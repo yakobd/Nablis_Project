@@ -18,14 +18,8 @@ export function PublicFooter() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10 lg:gap-16 mb-10">
           {/* Brand */}
           <div>
-            <Link href="/" className="flex items-center gap-2.5 mb-5">
-              <div className="w-9 h-9 rounded-xl bg-[#F5C518] flex items-center justify-center">
-                <span className="text-[#1B2E6B] font-bold text-base leading-none">ን</span>
-              </div>
-              <div className="leading-tight">
-                <p className="font-bold text-white text-[15px] leading-tight">ናቡስ</p>
-                <p className="text-[10px] text-white/50 leading-tight tracking-wide">Nablis Ministry</p>
-              </div>
+            <Link href="/" className="flex items-center mb-5">
+              <img src="/Logo-White.png" alt="Nablis" className="h-12 w-auto" />
             </Link>
             <p className="text-white/60 text-sm leading-relaxed mb-5">
               Dedicated to spiritual growth, community building, and faith guidance through compassionate Orthodox ministry.
@@ -72,19 +66,19 @@ export function PublicFooter() {
               <li className="flex items-start gap-3">
                 <Phone size={15} className="text-[#F5C518] mt-0.5 flex-shrink-0" />
                 <a
-                  href="tel:+971564983456"
+                  href="tel:+251912872622"
                   className="text-white/60 text-sm hover:text-[#F5C518] transition-colors"
                 >
-                  +971 56 498 3456
+                  +251912872622
                 </a>
               </li>
               <li className="flex items-start gap-3">
                 <Mail size={15} className="text-[#F5C518] mt-0.5 flex-shrink-0" />
                 <a
-                  href="mailto:info@nablis.com"
+                  href="mailto:nablis.info@gmail.com"
                   className="text-white/60 text-sm hover:text-[#F5C518] transition-colors"
                 >
-                  info@nablis.com
+                  nablis.info@gmail.com
                 </a>
               </li>
               <li className="flex items-start gap-3">

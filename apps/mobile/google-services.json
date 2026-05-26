@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "209753387101",
+    "project_id": "nablis-f9330",
+    "storage_bucket": "nablis-f9330.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:209753387101:android:cfcd1c3686b74baf909db4",
+        "android_client_info": {
+          "package_name": "com.nablis.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBh5tEd93mh-_xQyrKZdQA-KXaektWIQ2Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

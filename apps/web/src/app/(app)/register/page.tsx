@@ -76,9 +76,7 @@ export default function RegisterPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-6">
-          <div className="w-14 h-14 rounded-2xl bg-[#1B2E6B] flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-[#F5C518] font-bold text-2xl leading-none">ን</span>
-          </div>
+          <img src="/Logo-Blue.png" alt="Nablis" className="h-20 w-auto mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-[#1B2E6B]">Create Account</h1>
           <p className="text-[#9CA3AF] text-sm mt-1">Join the Nablis Ministry community</p>
         </div>

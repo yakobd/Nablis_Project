@@ -68,7 +68,7 @@ As we engage in fasting, let us remember its purpose: to humble ourselves before
 
 May our fasting always be accompanied by genuine repentance, sincere prayer, and acts of love toward our neighbors. For it is in the combination of these practices that we truly draw near to the living God.`,
   category: "Teachings",
-  authorName: "Aba Gorgorios",
+  authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
   pinned: true,
   publishAt: null,
   createdAt: null,
@@ -81,7 +81,7 @@ const FALLBACK_RELATED: BlogCardData[] = [
     content:
       "The doctrine of the Holy Trinity is central to Orthodox Christianity. Understanding the relationship between the Father, the Son, and the Holy Spirit is foundational to our faith and worship...",
     category: "Theology",
-    authorName: "Aba Gorgorios",
+    authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
     publishAt: null,
     createdAt: null,
   },
@@ -91,7 +91,7 @@ const FALLBACK_RELATED: BlogCardData[] = [
     content:
       "There is profound power in gathering together in prayer. When our community comes together to lift our voices and hearts to God, we experience a spiritual unity that transcends individual worship...",
     category: "Community",
-    authorName: "Aba Gorgorios",
+    authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
     publishAt: null,
     createdAt: null,
   },
@@ -101,7 +101,7 @@ const FALLBACK_RELATED: BlogCardData[] = [
     content:
       "One of the greatest challenges facing Ethiopian Orthodox families living abroad is raising their children in the faith. Far from the cultural environment of Ethiopia, parents often struggle to pass on traditions...",
     category: "Family",
-    authorName: "Aba Gorgorios",
+    authorName: "መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)",
     publishAt: null,
     createdAt: null,
   },

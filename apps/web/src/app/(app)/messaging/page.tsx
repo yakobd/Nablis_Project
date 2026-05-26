@@ -203,7 +203,7 @@ function AdminMessaging() {
   return (
     <div className="flex h-[calc(100vh-10rem)] bg-white rounded-2xl border border-[#E5E7EB] shadow-sm overflow-hidden">
       {/* Inbox sidebar */}
-      <div className="w-72 border-r border-[#F3F4F6] flex flex-col flex-shrink-0">
+      <div className={`${activeConvo ? 'hidden md:flex' : 'flex'} w-full md:w-72 border-r border-[#F3F4F6] flex-col flex-shrink-0`}>
         <div className="px-4 py-4 border-b border-[#F3F4F6]">
           <h2 className="text-[#1B2E6B] font-bold text-sm mb-3">Messages</h2>
           <div className="relative">
@@ -252,9 +252,20 @@ function AdminMessaging() {
       </div>
 
       {/* Chat area */}
-      <div className="flex-1 flex flex-col">
+      <div className={`${!activeConvo ? 'hidden md:flex' : 'flex'} flex-1 flex-col`}>
         {activeConvo ? (
-          <ChatPanel conversationId={activeConvo.id} partnerName={activeConvo.participantName} />
+          <>
+            <div className="md:hidden px-4 py-2.5 border-b border-[#F3F4F6] flex-shrink-0">
+              <button
+                onClick={() => setActiveConvo(null)}
+                className="text-sm text-[#1B2E6B] font-semibold flex items-center gap-1.5"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                Back to inbox
+              </button>
+            </div>
+            <ChatPanel conversationId={activeConvo.id} partnerName={activeConvo.participantName} />
+          </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-[#9CA3AF]">
             <MessageSquare size={40} className="mb-3 opacity-20" />

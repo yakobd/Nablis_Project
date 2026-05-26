@@ -81,14 +81,14 @@ export default function ContactPage() {
               {
                 icon: <Phone size={18} className="text-[#F5C518]" />,
                 label: "Phone",
-                value: "+971 56 498 3456",
-                href: "tel:+971564983456",
+                value: "+251912872622",
+                href: "tel:+251912872622",
               },
               {
                 icon: <Mail size={18} className="text-[#F5C518]" />,
                 label: "Email",
-                value: "info@nablis.com",
-                href: "mailto:info@nablis.com",
+                value: "nablis.info@gmail.com",
+                href: "mailto:nablis.info@gmail.com",
               },
               {
                 icon: <MapPin size={18} className="text-[#F5C518]" />,
@@ -147,7 +147,7 @@ export default function ContactPage() {
             <div className="bg-[#1B2E6B] rounded-2xl p-5 text-white">
               <p className="text-[#F5C518] font-semibold text-sm mb-2">Need urgent help?</p>
               <p className="text-white/70 text-sm leading-relaxed">
-                For urgent spiritual matters, please call us directly. Aba Gorgorios is
+                For urgent spiritual matters, please call us directly. መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር) is
                 available for pastoral emergencies outside regular hours.
               </p>
             </div>

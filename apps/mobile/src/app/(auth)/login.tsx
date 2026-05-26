@@ -63,7 +63,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={[styles.inner, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
-        <Text style={styles.logo}>ናቡስ</Text>
+        <Text style={styles.logo}>Nablis</Text>
         <Text style={styles.title}>Nablis Ministry</Text>
         <Text style={styles.subtitle}>Sign in to your account</Text>
 

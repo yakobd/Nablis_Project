@@ -514,7 +514,7 @@ function MemberAppointments() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-[#1B2E6B]">My Spiritual Appointments</h1>
-            <p className="text-[#9CA3AF] text-sm mt-0.5">Manage your sessions with Aba Gorgorios</p>
+            <p className="text-[#9CA3AF] text-sm mt-0.5">Manage your sessions with መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)</p>
           </div>
           <button onClick={() => setBooking(true)}
             className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
@@ -583,8 +583,8 @@ function MemberAppointments() {
         <MiniCalendar appointments={appointments} />
         <div className="bg-[#1B2E6B] rounded-2xl p-5 text-white">
           <p className="font-semibold text-sm mb-1">Need to reschedule?</p>
-          <p className="text-white/60 text-xs leading-relaxed">Contact Aba Gorgorios directly or book a new session through the app.</p>
-          <a href="tel:+971564983456" className="mt-3 block text-[#F5C518] text-xs font-semibold">+971 56 498 3456</a>
+          <p className="text-white/60 text-xs leading-relaxed">Contact መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር) directly or book a new session through the app.</p>
+          <a href="tel:+251912872622" className="mt-3 block text-[#F5C518] text-xs font-semibold">+251912872622</a>
         </div>
       </div>
 

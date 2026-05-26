@@ -145,7 +145,7 @@ export default function RegisterScreen() {
           <Ionicons name="arrow-back" size={20} color={C.navy} />
         </TouchableOpacity>
 
-        <Text style={styles.logo}>ናቡስ</Text>
+        <Text style={styles.logo}>Nablis</Text>
         <Text style={styles.title}>Join Nablis Ministry</Text>
         <Text style={styles.subtitle}>
           Fill out your profile to request membership.{'\n'}
