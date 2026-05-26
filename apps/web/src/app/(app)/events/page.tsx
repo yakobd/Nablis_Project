@@ -1,8 +1,8 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import {
-  collection, query, orderBy, getDocs, addDoc, updateDoc, deleteDoc,
-  doc, serverTimestamp, Timestamp,
+  collection, query, orderBy, where, getDocs, addDoc, updateDoc, deleteDoc,
+  doc, serverTimestamp, Timestamp, writeBatch,
 } from "firebase/firestore";
 import { db, useAuth } from "@/lib/firebase";
 import {
@@ -82,7 +82,24 @@ function EventFormModal({ initial, onClose, onSaved }: EventFormProps) {
       if (initial?.id) {
         await updateDoc(doc(db, "events", initial.id), payload);
       } else {
-        await addDoc(collection(db, "events"), { ...payload, createdAt: serverTimestamp(), attendees: [] });
+        const evRef = await addDoc(collection(db, "events"), { ...payload, createdAt: serverTimestamp(), attendees: [] });
+        // Notify all active members
+        const membersSnap = await getDocs(query(collection(db, "users"), where("status", "==", "active"), where("role", "==", "member")));
+        if (!membersSnap.empty) {
+          const batch = writeBatch(db);
+          membersSnap.docs.forEach((m) => {
+            batch.set(doc(collection(db, "notifications")), {
+              userId: m.id,
+              type: "new_event",
+              title: `New Event: ${title.trim()}`,
+              description: description.trim() || "A new event has been added.",
+              link: `/events`,
+              read: false,
+              createdAt: serverTimestamp(),
+            });
+          });
+          await batch.commit();
+        }
       }
       onSaved();
     } finally {
@@ -196,7 +213,7 @@ function EventFormModal({ initial, onClose, onSaved }: EventFormProps) {
 }
 
 // ── Event card ────────────────────────────────────────────────────────────────
-function EventCard({ ev, onEdit, isAdmin }: { ev: Event; onEdit?: () => void; isAdmin: boolean }) {
+function EventCard({ ev, onEdit, isAdminOrSuperAdmin }: { ev: Event; onEdit?: () => void; isAdminOrSuperAdmin: boolean }) {
   const b = badge(ev);
   return (
     <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm overflow-hidden group hover:shadow-md transition-shadow">
@@ -209,7 +226,7 @@ function EventCard({ ev, onEdit, isAdmin }: { ev: Event; onEdit?: () => void; is
           </div>
         )}
         <span className={`absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold ${BADGE_STYLE[b]}`}>{b}</span>
-        {isAdmin && onEdit && (
+        {isAdminOrSuperAdmin && onEdit && (
           <button onClick={onEdit}
             className="absolute top-3 right-3 p-1.5 rounded-lg bg-black/40 text-white hover:bg-black/60 transition-colors">
             <Pencil size={12} />
@@ -247,7 +264,7 @@ function EventCard({ ev, onEdit, isAdmin }: { ev: Event; onEdit?: () => void; is
 }
 
 // ── Featured banner ───────────────────────────────────────────────────────────
-function FeaturedBanner({ ev, onEdit, isAdmin }: { ev: Event; onEdit?: () => void; isAdmin: boolean }) {
+function FeaturedBanner({ ev, onEdit, isAdminOrSuperAdmin }: { ev: Event; onEdit?: () => void; isAdminOrSuperAdmin: boolean }) {
   const b = badge(ev);
   return (
     <div className="bg-[#1B2E6B] rounded-2xl overflow-hidden relative h-52 flex items-end">
@@ -268,7 +285,7 @@ function FeaturedBanner({ ev, onEdit, isAdmin }: { ev: Event; onEdit?: () => voi
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {isAdmin && onEdit && (
+          {isAdminOrSuperAdmin && onEdit && (
             <button onClick={onEdit}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/20 text-white text-xs font-semibold hover:bg-white/30 transition-colors">
               <Pencil size={12} /> Edit
@@ -286,7 +303,7 @@ function FeaturedBanner({ ev, onEdit, isAdmin }: { ev: Event; onEdit?: () => voi
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function EventsPage() {
   const { user, role } = useAuth();
-  const isAdmin = role === "admin";
+  const isAdminOrSuperAdmin = role === "admin" || role === "super_admin";
   const [events, setEvents]       = useState<Event[]>([]);
   const [loading, setLoading]     = useState(true);
   const [activeCat, setActiveCat] = useState<Cat>("All");
@@ -321,7 +338,7 @@ export default function EventsPage() {
           <h1 className="text-xl font-bold text-[#1B2E6B]">Events</h1>
           <p className="text-[#9CA3AF] text-sm mt-0.5">Upcoming spiritual gatherings and community programs</p>
         </div>
-        {isAdmin && (
+        {isAdminOrSuperAdmin && (
           <div className="flex gap-2">
             <button onClick={() => { setEditEvent(null); setShowForm(true); }}
               className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
@@ -360,7 +377,7 @@ export default function EventsPage() {
         <div className="py-16 text-center text-[#9CA3AF]">
           <Calendar size={36} className="mx-auto mb-2 opacity-30" />
           <p className="text-sm">No events found.</p>
-          {isAdmin && (
+          {isAdminOrSuperAdmin && (
             <button onClick={() => { setEditEvent(null); setShowForm(true); }}
               className="mt-3 flex items-center gap-1.5 mx-auto bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2 rounded-xl hover:bg-[#e6b800] transition-colors">
               <Plus size={14} /> Create First Event
@@ -371,7 +388,7 @@ export default function EventsPage() {
         <>
           {/* Featured banner */}
           {featured && (
-            <FeaturedBanner ev={featured} isAdmin={isAdmin}
+            <FeaturedBanner ev={featured} isAdminOrSuperAdmin={isAdminOrSuperAdmin}
               onEdit={() => { setEditEvent(featured); setShowForm(true); }} />
           )}
 
@@ -379,7 +396,7 @@ export default function EventsPage() {
           {rest.length > 0 && (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {rest.map((ev) => (
-                <EventCard key={ev.id} ev={ev} isAdmin={isAdmin}
+                <EventCard key={ev.id} ev={ev} isAdminOrSuperAdmin={isAdminOrSuperAdmin}
                   onEdit={() => { setEditEvent(ev); setShowForm(true); }} />
               ))}
             </div>
@@ -388,7 +405,7 @@ export default function EventsPage() {
       )}
 
       {/* Admin sidebar CTA strip */}
-      {isAdmin && (
+      {isAdminOrSuperAdmin && (
         <div className="bg-[#1B2E6B] rounded-2xl p-5 flex items-center justify-between">
           <div>
             <p className="text-white font-bold text-sm">Manage all events</p>

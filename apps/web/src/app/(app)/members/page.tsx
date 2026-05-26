@@ -96,12 +96,14 @@ function MemberDetailModal({
   prayerMap,
   onClose,
   onUpdate,
+  isSuperAdmin,
 }: {
   member: User;
   apptCountMap: Record<string, number>;
   prayerMap: Record<string, { streak: number; total: number }>;
   onClose: () => void;
   onUpdate: (updated: User) => void;
+  isSuperAdmin: boolean;
 }) {
   const [member, setMember] = useState<User>(initMember);
   const [tab, setTab] = useState<"info" | "appointments" | "activity">("info");
@@ -247,7 +249,7 @@ function MemberDetailModal({
 
             {/* Action buttons */}
             <div className="p-4 space-y-2">
-              {member.status === "pending" && (
+              {isSuperAdmin && member.status === "pending" && (
                 <>
                   <button
                     onClick={() => runAction("approve")}
@@ -267,7 +269,7 @@ function MemberDetailModal({
                   </button>
                 </>
               )}
-              {member.role === "member" && member.status === "active" && (
+              {isSuperAdmin && member.role === "member" && member.status === "active" && (
                 <button
                   onClick={() => runAction("promote")}
                   disabled={saving}
@@ -277,7 +279,7 @@ function MemberDetailModal({
                   Promote to Admin
                 </button>
               )}
-              {member.role === "admin" && (
+              {isSuperAdmin && member.role === "admin" && (
                 <button
                   onClick={() => runAction("demote")}
                   disabled={saving}
@@ -286,6 +288,11 @@ function MemberDetailModal({
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
                   Demote to Member
                 </button>
+              )}
+              {!isSuperAdmin && (
+                <div className="bg-[#FFF9E6] border border-yellow-200 rounded-xl p-3 text-xs text-[#92400E]">
+                  Contact Super Admin to manage member roles
+                </div>
               )}
               <button
                 onClick={() => router.push(`/messaging?member=${member.id}`)}
@@ -302,24 +309,26 @@ function MemberDetailModal({
                 Full Profile Page
               </Link>
 
-              <div className="pt-2 border-t border-[#F9FAFB] space-y-1.5">
-                {member.status === "active" && (
+              {isSuperAdmin && (
+                <div className="pt-2 border-t border-[#F9FAFB] space-y-1.5">
+                  {member.status === "active" && (
+                    <button
+                      onClick={() => setConfirming("suspend")}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-orange-200 text-orange-600 text-xs font-semibold hover:bg-orange-50 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                      Suspend Account
+                    </button>
+                  )}
                   <button
-                    onClick={() => setConfirming("suspend")}
-                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-orange-200 text-orange-600 text-xs font-semibold hover:bg-orange-50 transition-colors"
+                    onClick={() => setConfirming("delete")}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50 transition-colors"
                   >
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-                    Suspend Account
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    Delete Account
                   </button>
-                )}
-                <button
-                  onClick={() => setConfirming("delete")}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50 transition-colors"
-                >
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                  Delete Account
-                </button>
-              </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -524,12 +533,14 @@ function MemberCard({
   prayerStreak,
   onView,
   onAction,
+  isSuperAdmin,
 }: {
   member: User;
   apptCount: number;
   prayerStreak: number;
   onView: () => void;
   onAction: (action: "approve" | "reject" | "promote" | "demote" | "delete") => void;
+  isSuperAdmin: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -559,7 +570,8 @@ function MemberCard({
             <StatusBadge status={member.status} />
           </div>
         </div>
-        {/* Menu */}
+        {/* Menu — super_admin only */}
+        {isSuperAdmin && (
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
@@ -611,6 +623,7 @@ function MemberCard({
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* Details */}
@@ -676,6 +689,7 @@ function MemberCard({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function MembersPage() {
   const { role } = useAuth();
+  const isSuperAdmin = role === "super_admin";
   const [members, setMembers]           = useState<User[]>([]);
   const [apptCountMap, setApptCountMap] = useState<Record<string, number>>({});
   const [prayerMap, setPrayerMap]       = useState<Record<string, { streak: number; total: number }>>({});
@@ -904,11 +918,13 @@ export default function MembersPage() {
         <p className="text-xs text-[#9CA3AF]">
           Showing <strong className="text-[#374151]">{filtered.length}</strong> of {members.filter((m) => m.role !== "super_admin").length} members
         </p>
-        <Link href="/members/new"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F5C518] text-[#1B2E6B] text-xs font-semibold hover:bg-[#e6b800] transition-colors">
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add Member
-        </Link>
+        {isSuperAdmin && (
+          <Link href="/members/new"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F5C518] text-[#1B2E6B] text-xs font-semibold hover:bg-[#e6b800] transition-colors">
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Member
+          </Link>
+        )}
       </div>
 
       {/* Content */}
@@ -933,6 +949,7 @@ export default function MembersPage() {
               prayerStreak={prayerMap[m.id]?.streak ?? 0}
               onView={() => setSelected(m)}
               onAction={(action) => handleCardAction(m, action)}
+              isSuperAdmin={isSuperAdmin}
             />
           ))}
         </div>
@@ -995,6 +1012,7 @@ export default function MembersPage() {
           prayerMap={prayerMap}
           onClose={() => setSelected(null)}
           onUpdate={handleUpdate}
+          isSuperAdmin={isSuperAdmin}
         />
       )}
     </div>

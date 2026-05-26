@@ -14,7 +14,7 @@ import {
   orderBy,
 } from "firebase/firestore";
 import { db, useAuth } from "@/lib/firebase";
-import { Plus, Pencil, Trash2, X, Check, Sun, Cloud, Moon } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, Sun, Cloud, Moon, Download, Search } from "lucide-react";
 import type { DailyPrayer, PrayerLog } from "@nablis/shared/firebase";
 
 // ── Toggle component ──────────────────────────────────────────────────────────
@@ -396,9 +396,222 @@ function MemberPrayers() {
   );
 }
 
+// ── Super Admin monitoring view ───────────────────────────────────────────────
+interface MemberPrayerRow {
+  uid: string;
+  displayName: string;
+  morning: boolean;
+  afternoon: boolean;
+  evening: boolean;
+  streak: number;
+  total: number;
+  lastPrayed: Timestamp | null;
+}
+
+function SuperAdminPrayers() {
+  const [prayers, setPrayers]         = useState<DailyPrayer[]>([]);
+  const [rows, setRows]               = useState<MemberPrayerRow[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [editing, setEditing]         = useState<Partial<DailyPrayer> | null | undefined>(undefined);
+  const [search, setSearch]           = useState("");
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      try {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const [prayerSnap, logSnap, userSnap] = await Promise.all([
+          getDocs(collection(db, "dailyPrayers")),
+          getDocs(query(collection(db, "prayerLogs"), where("prayedAt", ">=", Timestamp.fromDate(today)))),
+          getDocs(query(collection(db, "users"), where("role", "==", "member"), where("status", "==", "active"))),
+        ]);
+        setPrayers(prayerSnap.docs.map((d) => ({ id: d.id, ...d.data() } as DailyPrayer)));
+
+        const users = userSnap.docs.map((d) => ({ id: d.id, ...d.data() } as { id: string; displayName?: string; email?: string }));
+        const todayLogs = logSnap.docs.map((d) => ({ id: d.id, ...d.data() } as PrayerLog));
+
+        const allLogSnap = await getDocs(collection(db, "prayerLogs"));
+        const allLogs = allLogSnap.docs.map((d) => ({ id: d.id, ...d.data() } as PrayerLog));
+        const logsByUser: Record<string, PrayerLog[]> = {};
+        allLogs.forEach((l) => { if (l.userId) { logsByUser[l.userId] = [...(logsByUser[l.userId] ?? []), l]; } });
+
+        const result: MemberPrayerRow[] = users.map((u) => {
+          const todayUserLogs = todayLogs.filter((l) => l.userId === u.id);
+          const uAllLogs = (logsByUser[u.id] ?? []).sort((a, b) => (b.prayedAt?.seconds ?? 0) - (a.prayedAt?.seconds ?? 0));
+          const days = [...new Set(uAllLogs.map((l) => l.prayedAt?.toDate?.()?.toISOString().split("T")[0]).filter(Boolean))].sort().reverse() as string[];
+          let streak = 0;
+          let prev = new Date(); prev.setHours(0, 0, 0, 0);
+          for (const ds of days) {
+            const d = new Date(ds + "T00:00:00");
+            const diff = Math.round((prev.getTime() - d.getTime()) / 86400000);
+            if (diff <= 1) { streak++; prev = d; } else break;
+          }
+          return {
+            uid: u.id,
+            displayName: u.displayName || u.email || u.id,
+            morning:   todayUserLogs.some((l) => l.prayerType === "morning"),
+            afternoon: todayUserLogs.some((l) => l.prayerType === "afternoon"),
+            evening:   todayUserLogs.some((l) => l.prayerType === "evening"),
+            streak,
+            total: uAllLogs.length,
+            lastPrayed: uAllLogs[0]?.prayedAt ?? null,
+          };
+        });
+        setRows(result);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  function onSaved(p: DailyPrayer) {
+    setPrayers((prev) => {
+      const idx = prev.findIndex((x) => x.id === p.id);
+      if (idx >= 0) { const next = [...prev]; next[idx] = p; return next; }
+      return [...prev, p];
+    });
+  }
+
+  async function deletePrayer(id: string) {
+    if (!confirm("Delete this prayer reminder?")) return;
+    await deleteDoc(doc(db, "dailyPrayers", id));
+    setPrayers((p) => p.filter((pr) => pr.id !== id));
+  }
+
+  const prayedToday  = rows.filter((r) => r.morning || r.afternoon || r.evening).length;
+  const avgStreak    = rows.length ? Math.round(rows.reduce((s, r) => s + r.streak, 0) / rows.length) : 0;
+  const activeStreaks = rows.filter((r) => r.streak >= 3).length;
+
+  const filtered = rows.filter((r) => !search || r.displayName.toLowerCase().includes(search.toLowerCase()));
+
+  function fmtTs(ts: Timestamp | null): string {
+    if (!ts) return "—";
+    try { return ts.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric" }); }
+    catch { return "—"; }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-[#1B2E6B]">Daily Prayer Monitoring</h1>
+          <p className="text-[#9CA3AF] text-sm mt-0.5">Monitor community prayer activity</p>
+        </div>
+        <button
+          onClick={() => {
+            const csv = ["Member,Morning,Afternoon,Evening,Streak,Total,Last Prayed",
+              ...filtered.map((r) => `${r.displayName},${r.morning},${r.afternoon},${r.evening},${r.streak},${r.total},${fmtTs(r.lastPrayed)}`)
+            ].join("\n");
+            const a = document.createElement("a"); a.href = "data:text/csv," + encodeURIComponent(csv); a.download = "prayer-report.csv"; a.click();
+          }}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[#E5E7EB] text-sm font-semibold text-[#374151] hover:bg-[#EEF1F8] transition-colors">
+          <Download size={14} /> Export Report
+        </button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Total Members",  value: rows.length,   icon: "👥" },
+          { label: "Prayed Today",   value: prayedToday,   icon: "🙏" },
+          { label: "Average Streak", value: `${avgStreak}d`, icon: "🔥" },
+          { label: "Active Streaks", value: activeStreaks, icon: "⚡" },
+        ].map(({ label, value, icon }) => (
+          <div key={label} className="bg-white rounded-2xl p-5 border border-[#E5E7EB] shadow-sm text-center">
+            <p className="text-2xl mb-1">{icon}</p>
+            <p className="text-2xl font-bold text-[#1B2E6B]">{value}</p>
+            <p className="text-[#9CA3AF] text-xs mt-0.5">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Reminder times */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-[#1B2E6B] font-semibold text-sm">Reminder Times</h2>
+          <button onClick={() => setEditing(null)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-[#1B2E6B] bg-[#EEF1F8] px-3 py-1.5 rounded-lg hover:bg-[#dde3f0] transition-colors">
+            <Plus size={13} /> ADD NEW
+          </button>
+        </div>
+        {prayers.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6 text-center text-[#9CA3AF] text-sm">No prayer reminders yet.</div>
+        ) : (
+          <div className="grid sm:grid-cols-3 gap-4">
+            {prayers.map((p) => (
+              <div key={p.id} className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {PRAYER_ICONS[p.type]}
+                  <div>
+                    <p className="text-[#1B2E6B] font-semibold text-sm capitalize">{p.type}</p>
+                    <p className="text-[#9CA3AF] text-xs">{p.time}</p>
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => setEditing(p)} className="p-1.5 rounded-lg hover:bg-[#EEF1F8] text-[#9CA3AF]"><Pencil size={12} /></button>
+                  <button onClick={() => deletePrayer(p.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-400"><Trash2 size={12} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Member Prayer Progress */}
+      <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-[#F3F4F6] flex items-center justify-between">
+          <h2 className="text-[#1B2E6B] font-semibold text-sm">Member Prayer Progress (Today)</h2>
+          <div className="relative w-52">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search member…"
+              className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-[#E5E7EB] text-xs focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20" />
+          </div>
+        </div>
+        {loading ? (
+          <div className="py-12 text-center"><div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" /></div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[#F9FAFB] border-b border-[#F3F4F6]">
+                  {["Member Name","Morning","Afternoon","Evening","Streak","Total Prayers","Last Prayed"].map((h) => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-[#9CA3AF] whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#F3F4F6]">
+                {filtered.length === 0 ? (
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-[#9CA3AF] text-sm">No members found.</td></tr>
+                ) : filtered.map((r) => (
+                  <tr key={r.uid} className="hover:bg-[#F9FAFB]">
+                    <td className="px-4 py-3 text-[#374151] font-medium text-xs">{r.displayName}</td>
+                    <td className="px-4 py-3 text-center">{r.morning ? "✅" : "✗"}</td>
+                    <td className="px-4 py-3 text-center">{r.afternoon ? "✅" : "✗"}</td>
+                    <td className="px-4 py-3 text-center">{r.evening ? "✅" : "✗"}</td>
+                    <td className="px-4 py-3 text-xs"><span className="flex items-center gap-1 text-[#1B2E6B] font-semibold">🔥 {r.streak}d</span></td>
+                    <td className="px-4 py-3 text-[#6B7280] text-xs">{r.total}</td>
+                    <td className="px-4 py-3 text-[#6B7280] text-xs">{fmtTs(r.lastPrayed)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {editing !== undefined && (
+        <PrayerEditModal prayer={editing} onClose={() => setEditing(undefined)} onSaved={onSaved} />
+      )}
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function DailyPrayersPage() {
   const { user, role } = useAuth();
   if (!user) return null;
-  return role === "admin" ? <AdminPrayers /> : <MemberPrayers />;
+  if (role === "super_admin") return <SuperAdminPrayers />;
+  if (role === "admin") return <AdminPrayers />;
+  return <MemberPrayers />;
 }

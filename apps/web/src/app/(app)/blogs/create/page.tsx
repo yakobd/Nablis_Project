@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useRef } from "react";
-import { addDoc, collection, serverTimestamp, Timestamp } from "firebase/firestore";
+import { addDoc, collection, serverTimestamp, Timestamp, getDocs, query, where, writeBatch, doc } from "firebase/firestore";
 import { db, useAuth } from "@/lib/firebase";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { useRouter } from "next/navigation";
@@ -80,6 +80,23 @@ export default function CreateBlogPage() {
         createdAt:  serverTimestamp(),
         comments:   [],
       });
+      // Notify all active members
+      const membersSnap = await getDocs(query(collection(db, "users"), where("status", "==", "active"), where("role", "==", "member")));
+      if (!membersSnap.empty) {
+        const batch = writeBatch(db);
+        membersSnap.docs.forEach((m) => {
+          batch.set(doc(collection(db, "notifications")), {
+            userId: m.id,
+            type: "new_blog",
+            title: `New Post: ${title.trim()}`,
+            description: `A new blog post has been published by ${user!.displayName || user!.email}.`,
+            link: "/blogs",
+            read: false,
+            createdAt: serverTimestamp(),
+          });
+        });
+        await batch.commit();
+      }
       router.push("/blogs");
     } finally {
       setSaving(false);

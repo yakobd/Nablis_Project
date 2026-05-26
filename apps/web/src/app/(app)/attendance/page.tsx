@@ -242,5 +242,5 @@ function MemberAttendance() {
 export default function AttendancePage() {
   const { user, role } = useAuth();
   if (!user) return null;
-  return role === "admin" ? <AdminAttendance /> : <MemberAttendance />;
+  return (role === "admin" || role === "super_admin") ? <AdminAttendance /> : <MemberAttendance />;
 }

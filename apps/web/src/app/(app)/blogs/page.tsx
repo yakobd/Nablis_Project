@@ -105,7 +105,8 @@ type FilterTab = (typeof FILTER_TABS)[number];
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function BlogsPage() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+  const isAdminOrSuperAdmin = role === "admin" || role === "super_admin";
   const [posts, setPosts]         = useState<BlogPost[]>([]);
   const [loading, setLoading]     = useState(true);
   const [filterTab, setFilterTab] = useState<FilterTab>("All");
@@ -133,18 +134,20 @@ export default function BlogsPage() {
           <h1 className="text-xl font-bold text-[#1B2E6B]">Blogs</h1>
           <p className="text-[#9CA3AF] text-sm mt-0.5">Manage spiritual teachings and articles</p>
         </div>
-        <div className="flex gap-2">
-          <Link href="/blogs/create"
-            className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
-            <Plus size={15} /> Create New Blog
-          </Link>
-          {posts.length > 0 && (
-            <Link href={`/blogs/${posts[0]?.id}/update`}
-              className="flex items-center gap-1.5 bg-[#EEF1F8] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#dde3f0] transition-colors">
-              <Pencil size={14} /> Update Existing Blog
+        {isAdminOrSuperAdmin && (
+          <div className="flex gap-2">
+            <Link href="/blogs/create"
+              className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
+              <Plus size={15} /> Create New Blog
             </Link>
-          )}
-        </div>
+            {posts.length > 0 && (
+              <Link href={`/blogs/${posts[0]?.id}/update`}
+                className="flex items-center gap-1.5 bg-[#EEF1F8] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#dde3f0] transition-colors">
+                <Pencil size={14} /> Update Existing Blog
+              </Link>
+            )}
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -242,7 +245,9 @@ export default function BlogsPage() {
                     </div>
                     <div className="flex gap-2 flex-shrink-0">
                       <Link href={`/blogs/${p.id}`} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#1B2E6B] bg-[#EEF1F8] hover:bg-[#1B2E6B] hover:text-white transition-colors">View</Link>
-                      <Link href={`/blogs/${p.id}/update`} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#6B7280] border border-[#E5E7EB] hover:bg-[#EEF1F8] transition-colors">Edit</Link>
+                      {isAdminOrSuperAdmin && (
+                        <Link href={`/blogs/${p.id}/update`} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#6B7280] border border-[#E5E7EB] hover:bg-[#EEF1F8] transition-colors">Edit</Link>
+                      )}
                     </div>
                   </div>
                 ))}

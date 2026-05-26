@@ -84,6 +84,17 @@ function ReviewModal({
         status,
         privateNote: note.trim() || null,
       });
+      await addDoc(collection(db, "notifications"), {
+        userId: appt.memberId,
+        type: status === "confirmed" ? "appointment_confirmed" : "appointment_rejected",
+        title: status === "confirmed" ? "Appointment Confirmed" : "Appointment Rejected",
+        description: status === "confirmed"
+          ? `Your ${appt.serviceType} appointment on ${fmtDate(appt.date)} has been confirmed.`
+          : `Your ${appt.serviceType} appointment on ${fmtDate(appt.date)} was not approved.`,
+        link: "/appointment",
+        read: false,
+        createdAt: serverTimestamp(),
+      });
       onAction(appt.id, status);
       onClose();
     } finally {
@@ -471,6 +482,21 @@ function BookingModal({ userId, userName, onClose, onBooked }: { userId: string;
   );
 }
 
+// ── Countdown helper ─────────────────────────────────────────────────────────
+function countdown(ts: Timestamp | null | undefined, time?: string): string {
+  if (!ts) return "";
+  try {
+    const d = ts.toDate();
+    const now = new Date();
+    const diffMs = d.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffMs / 86400000);
+    if (diffDays < 0) return "";
+    if (diffDays === 0) return `Today at ${time || d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+    if (diffDays === 1) return "Tomorrow";
+    return `In ${diffDays} days`;
+  } catch { return ""; }
+}
+
 // ── Member view ───────────────────────────────────────────────────────────────
 function MemberAppointments() {
   const { user } = useAuth();
@@ -495,9 +521,10 @@ function MemberAppointments() {
   useEffect(() => { load(); }, [load]);
 
   const now = Timestamp.now();
-  const upcoming = appointments.filter((a) => !a.date || a.date.seconds >= now.seconds);
-  const past      = appointments.filter((a) => a.date && a.date.seconds < now.seconds);
-  const displayed = tab === "upcoming" ? upcoming : past;
+  const upcoming  = appointments.filter((a) => !a.date || a.date.seconds >= now.seconds);
+  const past       = appointments.filter((a) => a.date && a.date.seconds < now.seconds);
+  const confirmed  = upcoming.filter((a) => a.status === "confirmed");
+  const pending    = upcoming.filter((a) => a.status === "pending");
 
   async function cancelAppt(apptId: string) {
     if (!confirm("Cancel this appointment?")) return;
@@ -506,6 +533,41 @@ function MemberAppointments() {
   }
 
   if (!user) return null;
+
+  function ApptCard({ a, showActions }: { a: Appointment; showActions: boolean }) {
+    const cd = countdown(a.date, a.time);
+    return (
+      <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-5">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-[#EEF1F8] flex items-center justify-center text-2xl flex-shrink-0">
+            {SERVICE_ICONS[a.serviceType] ?? "📋"}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <p className="text-[#1B2E6B] font-semibold text-sm capitalize">{a.serviceType}</p>
+              <StatusBadge status={a.status} />
+            </div>
+            <p className="text-[#6B7280] text-xs">{fmtDate(a.date)} · {a.time || "—"}</p>
+            {cd && <p className="text-[#1B2E6B] text-xs font-semibold mt-0.5">{cd}</p>}
+            {a.privateNote && (
+              <p className="text-[#9CA3AF] text-xs mt-1 truncate italic">&ldquo;{a.privateNote}&rdquo;</p>
+            )}
+          </div>
+        </div>
+        {showActions && (
+          <div className="flex gap-2 mt-4 pt-3 border-t border-[#F3F4F6]">
+            <button className="flex-1 py-1.5 rounded-lg border border-[#E5E7EB] text-xs font-semibold text-[#374151] hover:bg-[#EEF1F8] transition-colors">
+              Reschedule
+            </button>
+            <button onClick={() => cancelAppt(a.id)}
+              className="flex-1 py-1.5 rounded-lg border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50 transition-colors">
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="grid lg:grid-cols-3 gap-5">
@@ -537,43 +599,53 @@ function MemberAppointments() {
 
         {loading ? (
           <div className="py-16 text-center"><div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" /></div>
-        ) : displayed.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-[#E5E7EB] p-10 text-center text-[#9CA3AF]">
-            <p className="text-3xl mb-2">📅</p>
-            <p className="text-sm font-medium">No {tab} sessions</p>
-          </div>
+        ) : tab === "past" ? (
+          past.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-[#E5E7EB] p-10 text-center text-[#9CA3AF]">
+              <p className="text-3xl mb-2">📅</p>
+              <p className="text-sm font-medium">No past sessions</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {past.map((a) => <ApptCard key={a.id} a={a} showActions={false} />)}
+            </div>
+          )
         ) : (
-          <div className="space-y-3">
-            {displayed.map((a) => (
-              <div key={a.id} className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-5">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-[#EEF1F8] flex items-center justify-center text-2xl flex-shrink-0">
-                    {SERVICE_ICONS[a.serviceType] ?? "📋"}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="text-[#1B2E6B] font-semibold text-sm capitalize">{a.serviceType}</p>
-                      <StatusBadge status={a.status} />
-                    </div>
-                    <p className="text-[#6B7280] text-xs">{fmtDate(a.date)} · {a.time || "—"}</p>
-                    {a.privateNote && (
-                      <p className="text-[#9CA3AF] text-xs mt-1 truncate italic">&ldquo;{a.privateNote}&rdquo;</p>
-                    )}
-                  </div>
+          <div className="space-y-5">
+            {/* Confirmed appointments */}
+            {confirmed.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-[#1B2E6B] mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Upcoming Appointments
+                </h2>
+                <div className="space-y-3">
+                  {confirmed.map((a) => <ApptCard key={a.id} a={a} showActions={false} />)}
                 </div>
-                {tab === "upcoming" && a.status !== "rejected" && (
-                  <div className="flex gap-2 mt-4 pt-3 border-t border-[#F3F4F6]">
-                    <button className="flex-1 py-1.5 rounded-lg border border-[#E5E7EB] text-xs font-semibold text-[#374151] hover:bg-[#EEF1F8] transition-colors">
-                      Reschedule
-                    </button>
-                    <button onClick={() => cancelAppt(a.id)}
-                      className="flex-1 py-1.5 rounded-lg border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50 transition-colors">
-                      Cancel
-                    </button>
-                  </div>
-                )}
               </div>
-            ))}
+            )}
+
+            {/* Pending requests */}
+            {pending.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-[#1B2E6B] mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> Pending Requests
+                </h2>
+                <div className="space-y-3">
+                  {pending.map((a) => <ApptCard key={a.id} a={a} showActions={true} />)}
+                </div>
+              </div>
+            )}
+
+            {confirmed.length === 0 && pending.length === 0 && (
+              <div className="bg-white rounded-2xl border border-[#E5E7EB] p-10 text-center text-[#9CA3AF]">
+                <p className="text-3xl mb-2">📅</p>
+                <p className="text-sm font-medium">No upcoming sessions</p>
+                <button onClick={() => setBooking(true)}
+                  className="mt-3 flex items-center gap-1.5 mx-auto bg-[#F5C518] text-[#1B2E6B] font-semibold text-xs px-4 py-2 rounded-xl hover:bg-[#e6b800] transition-colors">
+                  <Plus size={13} /> Book a Session
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

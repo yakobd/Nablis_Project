@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, collection, getDocs, query, where, writeBatch } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -56,6 +56,23 @@ export default function RegisterPage() {
         christianName:       form.christianName.trim(),
         createdAt:           serverTimestamp(),
       });
+      // Notify all super_admins about new member registration
+      const adminsSnap = await getDocs(query(collection(db, "users"), where("role", "==", "super_admin")));
+      if (!adminsSnap.empty) {
+        const batch = writeBatch(db);
+        adminsSnap.docs.forEach((a) => {
+          batch.set(doc(collection(db, "notifications")), {
+            userId: a.id,
+            type: "new_member",
+            title: "New Member Registration",
+            description: `${form.displayName.trim()} has registered and is awaiting approval.`,
+            link: "/members",
+            read: false,
+            createdAt: serverTimestamp(),
+          });
+        });
+        await batch.commit();
+      }
       router.replace("/pending");
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? "";

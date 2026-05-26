@@ -4,6 +4,8 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@nablis/shared/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', path: '/dashboard' },
@@ -17,6 +19,7 @@ const NAV_ITEMS = [
   { key: 'gallery', label: 'Gallery', path: '/gallery-app' },
   { key: 'testimonials', label: 'Testimonials', path: '/testimonials' },
   { key: 'members', label: 'Members', path: '/members', roles: ['super_admin', 'admin'] },
+  { key: 'notifications', label: 'Notifications', path: '/notifications' },
   { key: 'settings', label: 'Settings', path: '/settings/profile' },
 ];
 
@@ -31,6 +34,7 @@ function getActiveKey(pathname: string): string {
   if (pathname.startsWith('/gallery-app')) return 'gallery';
   if (pathname.startsWith('/testimonials')) return 'testimonials';
   if (pathname.startsWith('/members')) return 'members';
+  if (pathname.startsWith('/notifications')) return 'notifications';
   if (pathname.startsWith('/settings')) return 'settings';
   return 'dashboard';
 }
@@ -40,6 +44,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, role, loading, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const isLoginPage    = pathname === '/login';
   const isRegisterPage = pathname === '/register';
@@ -47,6 +52,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isPublicPage   = isLoginPage || isRegisterPage;
 
   useEffect(() => { setSidebarOpen(false); }, [pathname]);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', user.id),
+      where('read', '==', false)
+    );
+    const unsub = onSnapshot(q, (snap) => setUnreadCount(snap.size));
+    return unsub;
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Status-aware routing
   useEffect(() => {
@@ -140,13 +156,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <button
               key={item.key}
               onClick={() => { router.push(item.path); setSidebarOpen(false); }}
-              className={`w-full text-left px-3 py-2.5 rounded-lg mb-1 text-sm font-medium transition-colors cursor-pointer
+              className={`w-full text-left px-3 py-2.5 rounded-lg mb-1 text-sm font-medium transition-colors cursor-pointer flex items-center justify-between
                 ${activeKey === item.key
                   ? 'bg-[#1B2E6B] text-white'
                   : 'text-gray-600 hover:bg-gray-100'
                 }`}
             >
-              {item.label}
+              <span>{item.label}</span>
+              {item.key === 'notifications' && unreadCount > 0 && (
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${activeKey === item.key ? 'bg-white text-[#1B2E6B]' : 'bg-[#1B2E6B] text-white'}`}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -186,6 +207,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             className="flex-1 md:flex-none md:w-72 px-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]"
           />
           <div className="flex items-center gap-3 ml-auto">
+            <button
+              onClick={() => router.push('/notifications')}
+              className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors flex-shrink-0"
+              aria-label="Notifications"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
             <span className="hidden sm:block text-sm text-gray-600 font-medium truncate max-w-[140px]">
               {user.displayName || user.email}
             </span>

@@ -177,10 +177,10 @@ function AddImageModal({ onClose, onAdded }: AddFormProps) {
 
 // ── Masonry grid ──────────────────────────────────────────────────────────────
 function MasonryGrid({
-  items, isAdmin, onSelect, onDelete,
+  items, isAdminOrSuperAdmin, onSelect, onDelete,
 }: {
   items: GalleryItem[];
-  isAdmin: boolean;
+  isAdminOrSuperAdmin: boolean;
   onSelect: (item: GalleryItem) => void;
   onDelete: (id: string) => void;
 }) {
@@ -207,7 +207,7 @@ function MasonryGrid({
               <div className="p-1.5 rounded-lg bg-white/20 text-white">
                 <ZoomIn size={12} />
               </div>
-              {isAdmin && (
+              {isAdminOrSuperAdmin && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
                   className="p-1.5 rounded-lg bg-red-500/70 text-white hover:bg-red-500 transition-colors">
@@ -225,7 +225,7 @@ function MasonryGrid({
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function GalleryAppPage() {
   const { user, role } = useAuth();
-  const isAdmin = role === "admin";
+  const isAdminOrSuperAdmin = role === "admin" || role === "super_admin";
   const [items, setItems]       = useState<GalleryItem[]>([]);
   const [loading, setLoading]   = useState(true);
   const [activeCat, setActiveCat] = useState<Cat>("All");
@@ -259,7 +259,7 @@ export default function GalleryAppPage() {
           <h1 className="text-xl font-bold text-[#1B2E6B]">Gallery</h1>
           <p className="text-[#9CA3AF] text-sm mt-0.5">Community photos and memories</p>
         </div>
-        {isAdmin && (
+        {isAdminOrSuperAdmin && (
           <button onClick={() => setShowAdd(true)}
             className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
             <Plus size={15} /> Add Image
@@ -295,7 +295,7 @@ export default function GalleryAppPage() {
       ) : (
         <MasonryGrid
           items={filtered}
-          isAdmin={isAdmin}
+          isAdminOrSuperAdmin={isAdminOrSuperAdmin}
           onSelect={setLightbox}
           onDelete={handleDelete}
         />

@@ -339,7 +339,7 @@ function MemberBibleStudy({ studies, loading }: { studies: BibleStudy[]; loading
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function BibleStudyPage() {
   const { user, role } = useAuth();
-  const isAdmin = role === "admin";
+  const isAdminOrSuperAdmin = role === "admin" || role === "super_admin";
   const [studies, setStudies] = useState<BibleStudy[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -375,7 +375,7 @@ export default function BibleStudyPage() {
           <h1 className="text-xl font-bold text-[#1B2E6B]">Bible Study</h1>
           <p className="text-[#9CA3AF] text-sm mt-0.5">Deepen your understanding of scripture</p>
         </div>
-        {isAdmin && (
+        {isAdminOrSuperAdmin && (
           <Link href="/bible-study/create"
             className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
             <Plus size={15} /> Create Study
@@ -383,7 +383,7 @@ export default function BibleStudyPage() {
         )}
       </div>
 
-      {isAdmin
+      {isAdminOrSuperAdmin
         ? <AdminBibleStudy studies={studies} loading={loading} />
         : <MemberBibleStudy studies={studies} loading={loading} />}
     </div>

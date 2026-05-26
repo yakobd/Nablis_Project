@@ -8,11 +8,9 @@ import {
   getDocs,
   doc,
   updateDoc,
-  addDoc,
-  serverTimestamp,
 } from "firebase/firestore";
 import { db, useAuth } from "@/lib/firebase";
-import { Plus, X, CheckCircle, XCircle, MessageSquare } from "lucide-react";
+import { X, CheckCircle, XCircle, MessageSquare } from "lucide-react";
 import type { Testimony } from "@nablis/shared/firebase";
 
 function fmtDate(ts: { toDate: () => Date } | null | undefined) {
@@ -106,73 +104,6 @@ function ReviewModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Submit modal (member) ─────────────────────────────────────────────────────
-function SubmitModal({ userId, userName, onClose, onSubmitted }: { userId: string; userName: string; onClose: () => void; onSubmitted: () => void }) {
-  const [title, setTitle]       = useState("");
-  const [content, setContent]   = useState("");
-  const [category, setCategory] = useState<Testimony["category"]>("healing");
-  const [loading, setLoading]   = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!title.trim() || !content.trim()) return;
-    setLoading(true);
-    try {
-      await addDoc(collection(db, "testimonies"), {
-        authorId: userId,
-        authorName: userName,
-        title: title.trim(),
-        content: content.trim(),
-        category,
-        status: "pending",
-        likes: 0,
-        createdAt: serverTimestamp(),
-      });
-      onSubmitted();
-      onClose();
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const INPUT = "w-full px-4 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors";
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#F3F4F6]">
-          <h3 className="text-[#1B2E6B] font-bold">Share Your Testimony</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#EEF1F8] text-[#9CA3AF]"><X size={16} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Title</label>
-            <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Give your testimony a title…" className={INPUT} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Category</label>
-            <select value={category} onChange={(e) => setCategory(e.target.value as Testimony["category"])} className={INPUT + " bg-white"}>
-              <option value="healing">Healing</option>
-              <option value="provision">Provision</option>
-              <option value="restoration">Restoration</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Your Testimony</label>
-            <textarea required value={content} onChange={(e) => setContent(e.target.value)} rows={5} placeholder="Share how God has worked in your life…" className={INPUT + " resize-none"} />
-          </div>
-          <button type="submit" disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-[#F5C518] text-[#1B2E6B] font-semibold py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors disabled:opacity-60 text-sm">
-            {loading && <div className="w-4 h-4 border-2 border-[#1B2E6B]/40 border-t-[#1B2E6B] rounded-full animate-spin" />}
-            Submit Testimony
-          </button>
-        </form>
       </div>
     </div>
   );
@@ -303,20 +234,14 @@ function AdminTestimonials() {
 // ── Member view ───────────────────────────────────────────────────────────────
 function MemberTestimonials() {
   const { user } = useAuth();
-  const [myTestimonies, setMyTestimonies] = useState<Testimony[]>([]);
-  const [published, setPublished]         = useState<Testimony[]>([]);
-  const [loading, setLoading]             = useState(true);
-  const [submitting, setSubmitting]       = useState(false);
+  const [published, setPublished] = useState<Testimony[]>([]);
+  const [loading, setLoading]    = useState(true);
 
   const load = async () => {
     if (!user) return;
     setLoading(true);
     try {
-      const [mySnap, pubSnap] = await Promise.all([
-        getDocs(query(collection(db, "testimonies"), where("authorId", "==", user.id), orderBy("createdAt", "desc"))),
-        getDocs(query(collection(db, "testimonies"), where("status", "==", "published"), orderBy("createdAt", "desc"))),
-      ]);
-      setMyTestimonies(mySnap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony)));
+      const pubSnap = await getDocs(query(collection(db, "testimonies"), where("status", "==", "published"), orderBy("createdAt", "desc")));
       setPublished(pubSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony)));
     } finally {
       setLoading(false);
@@ -329,33 +254,7 @@ function MemberTestimonials() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-[#1B2E6B]">Testimonials</h1>
-        <button onClick={() => setSubmitting(true)}
-          className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
-          <Plus size={15} /> Share Testimony
-        </button>
-      </div>
-
-      {myTestimonies.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold text-[#1B2E6B] mb-3">My Testimonies</h2>
-          <div className="space-y-3">
-            {myTestimonies.map((t) => (
-              <div key={t.id} className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-5">
-                <div className="flex items-center justify-between mb-2">
-                  <CategoryBadge category={t.category} />
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${t.status === "published" ? "bg-green-50 text-green-700" : "bg-yellow-50 text-yellow-700"}`}>
-                    {t.status === "published" ? "PUBLISHED" : "PENDING REVIEW"}
-                  </span>
-                </div>
-                <p className="text-[#1B2E6B] font-semibold text-sm mb-1">{t.title}</p>
-                <p className="text-[#6B7280] text-xs leading-relaxed line-clamp-2">{t.content}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <h1 className="text-xl font-bold text-[#1B2E6B]">Testimonials</h1>
 
       {/* Published testimonies */}
       <div>
@@ -391,9 +290,6 @@ function MemberTestimonials() {
         )}
       </div>
 
-      {submitting && (
-        <SubmitModal userId={user.id} userName={user.displayName || user.email} onClose={() => setSubmitting(false)} onSubmitted={load} />
-      )}
     </div>
   );
 }
@@ -402,5 +298,5 @@ function MemberTestimonials() {
 export default function TestimonialsPage() {
   const { user, role } = useAuth();
   if (!user) return null;
-  return role === "admin" ? <AdminTestimonials /> : <MemberTestimonials />;
+  return (role === "admin" || role === "super_admin") ? <AdminTestimonials /> : <MemberTestimonials />;
 }
