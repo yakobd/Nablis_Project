@@ -126,11 +126,11 @@ async function seedUsers() {
   const users = [
     {
       uid: ADMIN_UID,
-      email: 'gorgorios@nablis.org',
+      email: 'superadmin@nablis.org',
       password: 'Admin@Nablis2024',
       displayName: 'መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)',
       firestoreData: {
-        email: 'gorgorios@nablis.org',
+        email: 'superadmin@nablis.org',
         displayName: 'መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)',
         photoURL: null,
         role: 'admin',

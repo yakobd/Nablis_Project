@@ -7,8 +7,8 @@
  *     superadmin@nablis.com / Nablis2024!  → role: super_admin  (መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር))
  *
  *   ADMINS (2):
- *     admin1@nablis.com / Nablis2024!      → role: admin  (Deacon Dawit)
- *     admin2@nablis.com / Nablis2024!      → role: admin  (Deacon Henok)
+ *     admin1@nablis.com / Nablis2024!      → role: admin  (Abenezer)
+ *     admin2@nablis.com / Nablis2024!      → role: admin  (Biniyam)
  *
  *   ACTIVE MEMBERS (3):
  *     member1@nablis.com / Nablis2024!     → role: member, status: active (Mekdes Abebe)
@@ -149,7 +149,7 @@ async function main() {
     displayName:        'መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)',
     role:               'super_admin',
     status:             'active',
-    christianName:      'Gorgorios',
+    christianName:      'ሳሙኤል',
     parishChurch:       'Debre Selam Kidus Mikael',
     phoneNumber:        '+251911000001',
     countryOfResidence: 'Ethiopia',
@@ -166,7 +166,7 @@ async function main() {
     displayName:        'Abenezer',
     role:               'admin',
     status:             'active',
-    christianName:      'Dawit',
+    christianName:      'Abenezer',
     parishChurch:       'Debre Selam Kidus Mikael',
     phoneNumber:        '+251911000002',
     countryOfResidence: 'Ethiopia',
@@ -181,7 +181,7 @@ async function main() {
     displayName:        'Biniyam',
     role:               'admin',
     status:             'active',
-    christianName:      'Henok',
+    christianName:      'Biniyam',
     parishChurch:       'Debre Selam Kidus Mikael',
     phoneNumber:        '+251911000003',
     countryOfResidence: 'Ethiopia',
@@ -273,8 +273,8 @@ async function main() {
   console.log('  SUPER ADMIN:');
   console.log('    superadmin@nablis.com  / Nablis2024!   (መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር))');
   console.log('\n  ADMINS:');
-  console.log('    admin1@nablis.com      / Nablis2024!   (Deacon Dawit)');
-  console.log('    admin2@nablis.com      / Nablis2024!   (Deacon Henok)');
+  console.log('    admin1@nablis.com      / Nablis2024!   (Abenezer)');
+  console.log('    admin2@nablis.com      / Nablis2024!   (Biniyam)');
   console.log('\n  ACTIVE MEMBERS:');
   console.log('    member1@nablis.com     / Nablis2024!   (Mekdes Abebe)');
   console.log('    member2@nablis.com     / Nablis2024!   (Sara Tefera)');
