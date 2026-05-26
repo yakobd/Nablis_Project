@@ -11,7 +11,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "lucide-react": "^0.395.0"
+    "lucide-react": "^1.16.0"
   },
   "peerDependencies": {
     "react": "^18.2.0"
@@ -19,8 +19,8 @@
   "devDependencies": {
     "@nablis/eslint-config": "*",
     "@nablis/tsconfig": "*",
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.0",
     "typescript": "^5.4.0"
   },
   "license": "MIT"
