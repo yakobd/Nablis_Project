@@ -70,9 +70,10 @@ function ConsistencyGrid({ prayedDays }: { prayedDays: Set<string> }) {
 
 // ─── Admin Home ───────────────────────────────────────────────────────────────
 function AdminHome() {
-  const { user }   = useAuth();
+  const { user, role } = useAuth();
   const insets     = useSafeAreaInsets();
   const router     = useRouter();
+  const isSuperAdmin = role === "super_admin";
   const [stats, setStats] = useState({ members: 0, pendingApts: 0, prayers: 0, pendingTest: 0 });
   const [pendingApts, setPendingApts]       = useState<any[]>([]);
   const [pendingMembers, setPendingMembers] = useState<any[]>([]);
@@ -125,17 +126,50 @@ function AdminHome() {
     }
   }
 
-  async function approveMember(id: string) {
+  async function doApproveMember(id: string, newRole: "member" | "admin") {
     setActionId(id);
     try {
-      await updateDoc(doc(db, "users", id), { status: "active" });
-      Alert.alert("Done", "Member approved.");
+      await updateDoc(doc(db, "users", id), { status: "active", role: newRole });
+      Alert.alert("Done", newRole === "admin" ? "Member approved as Admin." : "Member approved.");
       await load();
     } catch {
       Alert.alert("Error", "Failed to approve member.");
     } finally {
       setActionId(null);
     }
+  }
+
+  function approveMember(id: string) {
+    if (isSuperAdmin) {
+      Alert.alert("Approve Member", "Approve as:", [
+        { text: "Member",    onPress: () => doApproveMember(id, "member") },
+        { text: "Admin",     onPress: () => doApproveMember(id, "admin")  },
+        { text: "Cancel",    style: "cancel" },
+      ]);
+    } else {
+      doApproveMember(id, "member");
+    }
+  }
+
+  async function rejectMember(id: string) {
+    Alert.alert("Reject Member", "Reject this registration?", [
+      {
+        text: "Reject", style: "destructive",
+        onPress: async () => {
+          setActionId(id);
+          try {
+            await updateDoc(doc(db, "users", id), { status: "rejected" });
+            Alert.alert("Done", "Member registration rejected.");
+            await load();
+          } catch {
+            Alert.alert("Error", "Failed to reject member.");
+          } finally {
+            setActionId(null);
+          }
+        },
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
   }
 
   if (loading) {
@@ -186,23 +220,49 @@ function AdminHome() {
         {/* Pending member approvals */}
         {pendingMembers.length > 0 && (
           <View style={styles.adminSection}>
-            <Text style={styles.adminSectionTitle}>Pending Member Approvals</Text>
+            <Text style={styles.adminSectionTitle}>
+              Pending Member Approvals ({pendingMembers.length})
+            </Text>
             {pendingMembers.map((m) => (
               <View key={m.id} style={styles.memberApprovalCard}>
-                <Avatar name={m.displayName || m.email} size={36} />
-                <View style={styles.memberApprovalInfo}>
-                  <Text style={styles.memberApprovalName}>{m.displayName || "Unnamed"}</Text>
-                  <Text style={styles.memberApprovalEmail} numberOfLines={1}>{m.email}</Text>
+                <View style={styles.memberApprovalTop}>
+                  <Avatar name={m.displayName || m.email} size={40} />
+                  <View style={styles.memberApprovalInfo}>
+                    <Text style={styles.memberApprovalName}>{m.displayName || "Unnamed"}</Text>
+                    <Text style={styles.memberApprovalEmail} numberOfLines={1}>{m.email}</Text>
+                  </View>
                 </View>
-                <TouchableOpacity
-                  style={[styles.approveBtn, actionId === m.id && { opacity: 0.6 }]}
-                  onPress={() => approveMember(m.id)}
-                  disabled={actionId === m.id}
-                >
-                  {actionId === m.id
-                    ? <ActivityIndicator size="small" color={C.white} />
-                    : <Text style={styles.approveBtnTxt}>Approve</Text>}
-                </TouchableOpacity>
+                {/* Registration details — visible to super_admin */}
+                {isSuperAdmin && (
+                  <View style={styles.memberRegDetails}>
+                    {m.christianName       && <Text style={styles.memberRegRow}>✝  {m.christianName}</Text>}
+                    {m.parishChurch        && <Text style={styles.memberRegRow}>⛪  {m.parishChurch}</Text>}
+                    {m.phoneNumber         && <Text style={styles.memberRegRow}>📞  {m.phoneNumber}</Text>}
+                    {(m.cityOfResidence || m.countryOfResidence) && (
+                      <Text style={styles.memberRegRow}>
+                        📍  {[m.neighborhood, m.cityOfResidence, m.countryOfResidence].filter(Boolean).join(", ")}
+                      </Text>
+                    )}
+                  </View>
+                )}
+                <View style={styles.memberApprovalBtns}>
+                  <TouchableOpacity
+                    style={[styles.approveBtn, !!actionId && { opacity: 0.5 }]}
+                    onPress={() => approveMember(m.id)}
+                    disabled={!!actionId}
+                  >
+                    {actionId === m.id
+                      ? <ActivityIndicator size="small" color={C.white} />
+                      : <Text style={styles.approveBtnTxt}>✓ Approve</Text>}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.rejectBtn, !!actionId && { opacity: 0.5 }]}
+                    onPress={() => rejectMember(m.id)}
+                    disabled={!!actionId}
+                  >
+                    <Text style={styles.rejectBtnTxt}>✕ Reject</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))}
           </View>
@@ -479,7 +539,7 @@ function MemberHome() {
 // ─── Root Export ──────────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const { role } = useAuth();
-  if (role === "admin") return <AdminHome />;
+  if (role === "admin" || role === "super_admin") return <AdminHome />;
   return <MemberHome />;
 }
 
@@ -508,12 +568,18 @@ const styles = StyleSheet.create({
   adminEmptyTxt:      { fontSize: 13, color: C.grey },
 
   // Member approval
-  memberApprovalCard: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border },
-  memberApprovalInfo: { flex: 1 },
-  memberApprovalName: { fontSize: 13, fontWeight: "700", color: C.dark },
-  memberApprovalEmail:{ fontSize: 11, color: C.grey },
-  approveBtn:         { backgroundColor: "#16A34A", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, minWidth: 70, alignItems: "center" },
-  approveBtnTxt:      { color: C.white, fontSize: 12, fontWeight: "700" },
+  memberApprovalCard:  { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border },
+  memberApprovalTop:   { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+  memberApprovalInfo:  { flex: 1 },
+  memberApprovalName:  { fontSize: 13, fontWeight: "700", color: C.dark },
+  memberApprovalEmail: { fontSize: 11, color: C.grey },
+  memberRegDetails:    { backgroundColor: C.light, borderRadius: 8, padding: 10, marginBottom: 10, gap: 4 },
+  memberRegRow:        { fontSize: 12, color: C.navy },
+  memberApprovalBtns:  { flexDirection: "row", gap: 8 },
+  approveBtn:          { flex: 1, backgroundColor: "#16A34A", paddingVertical: 8, borderRadius: 8, alignItems: "center" },
+  approveBtnTxt:       { color: C.white, fontSize: 12, fontWeight: "700" },
+  rejectBtn:           { flex: 1, backgroundColor: "#DC2626", paddingVertical: 8, borderRadius: 8, alignItems: "center" },
+  rejectBtnTxt:        { color: C.white, fontSize: 12, fontWeight: "700" },
 
   // Admin apt card
   adminAptCard:       { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border },

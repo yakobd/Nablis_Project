@@ -91,7 +91,7 @@ function ReviewModal({
     }
   }
 
-  const initials = (member?.displayName || member?.email || "?")[0].toUpperCase();
+  const initials = (member?.displayName || member?.email || "?")?.[0]?.toUpperCase() ?? "?";
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
@@ -178,7 +178,7 @@ function ReviewModal({
 }
 
 // ── Admin view ────────────────────────────────────────────────────────────────
-function AdminAppointments() {
+function AdminAppointments({ readOnly = false }: { readOnly?: boolean }) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [members, setMembers]           = useState<Record<string, User>>({});
   const [loading, setLoading]           = useState(true);
@@ -220,7 +220,7 @@ function AdminAppointments() {
   }
 
   const filtered = appointments.filter((a) => {
-    const matchesSearch = !search || a.memberName.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = !search || (a.memberName ?? "").toLowerCase().includes(search.toLowerCase());
     const iso = fmtDateIso(a.date);
     const matchesFrom = !dateFrom || iso >= dateFrom;
     const matchesTo   = !dateTo   || iso <= dateTo;
@@ -280,7 +280,7 @@ function AdminAppointments() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <div className="w-7 h-7 rounded-full bg-[#EEF1F8] flex items-center justify-center text-[10px] font-bold text-[#1B2E6B] flex-shrink-0">
-                          {a.memberName[0]?.toUpperCase()}
+                          {a.memberName?.[0]?.toUpperCase() ?? "?"}
                         </div>
                         <span className="text-[#374151] font-medium text-xs">{a.memberName}</span>
                       </div>
@@ -290,12 +290,18 @@ function AdminAppointments() {
                     <td className="px-4 py-3 text-[#6B7280] text-xs">{a.time || "—"}</td>
                     <td className="px-4 py-3"><StatusBadge status={a.status} /></td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => setReviewing(a)}
-                        className="px-3 py-1.5 rounded-lg bg-[#EEF1F8] text-[#1B2E6B] text-xs font-semibold hover:bg-[#1B2E6B] hover:text-white transition-colors"
-                      >
-                        Review
-                      </button>
+                      {readOnly ? (
+                        <span className="px-3 py-1.5 rounded-lg bg-[#F3F4F6] text-[#9CA3AF] text-xs font-semibold">
+                          View Only
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setReviewing(a)}
+                          className="px-3 py-1.5 rounded-lg bg-[#EEF1F8] text-[#1B2E6B] text-xs font-semibold hover:bg-[#1B2E6B] hover:text-white transition-colors"
+                        >
+                          Review
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -305,7 +311,7 @@ function AdminAppointments() {
         )}
       </div>
 
-      {reviewing && (
+      {reviewing && !readOnly && (
         <ReviewModal
           appt={reviewing}
           member={members[reviewing.memberId] ?? null}
@@ -598,5 +604,7 @@ function MemberAppointments() {
 export default function AppointmentPage() {
   const { user, role } = useAuth();
   if (!user) return null;
-  return role === "admin" ? <AdminAppointments /> : <MemberAppointments />;
+  if (role === "super_admin") return <AdminAppointments />;
+  if (role === "admin") return <AdminAppointments readOnly />;
+  return <MemberAppointments />;
 }

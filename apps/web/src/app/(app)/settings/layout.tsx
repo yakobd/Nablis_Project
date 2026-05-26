@@ -53,7 +53,7 @@ function NavLink({ href, label, icon, active }: NavLinkDef & { active: boolean }
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { role } = useAuth();
-  const isAdmin = role === "admin";
+  const isAdmin = role === "super_admin";
 
   function isActive(href: string) {
     if (href === "/settings/members") {

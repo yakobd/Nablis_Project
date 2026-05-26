@@ -8,7 +8,7 @@ import type { User } from '../types';
 export interface AuthState {
   firebaseUser: FirebaseUser | null;
   user: User | null;
-  role: 'admin' | 'member' | null;
+  role: 'super_admin' | 'admin' | 'member' | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -17,10 +17,8 @@ export interface AuthState {
 export function useAuth(): AuthState {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  // true until we've resolved both auth state AND firestore profile
   const [loading, setLoading] = useState(true);
 
-  // 1. Subscribe to Firebase Auth state
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (fbUser) => {
       setFirebaseUser(fbUser);
@@ -32,7 +30,6 @@ export function useAuth(): AuthState {
     return unsub;
   }, []);
 
-  // 2. When auth user changes, subscribe to their Firestore profile
   useEffect(() => {
     if (!firebaseUser) return;
     setLoading(true);

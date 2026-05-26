@@ -414,7 +414,7 @@ function MemberAppointments() {
 // ─── Root Export ──────────────────────────────────────────────────────────────
 export default function AppointmentsScreen() {
   const { role } = useAuth();
-  if (role === "admin") return <AdminAppointments />;
+  if (role === "admin" || role === "super_admin") return <AdminAppointments />;
   return <MemberAppointments />;
 }
 

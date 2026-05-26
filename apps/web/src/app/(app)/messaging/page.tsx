@@ -325,5 +325,5 @@ function MemberMessaging() {
 export default function MessagingPage() {
   const { user, role } = useAuth();
   if (!user) return null;
-  return role === "admin" ? <AdminMessaging /> : <MemberMessaging />;
+  return (role === "admin" || role === "super_admin") ? <AdminMessaging /> : <MemberMessaging />;
 }

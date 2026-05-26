@@ -321,7 +321,7 @@ function MemberMessages() {
 // ─── Root Export ──────────────────────────────────────────────────────────────
 export default function MessagesScreen() {
   const { role } = useAuth();
-  if (role === "admin") return <AdminMessages />;
+  if (role === "admin" || role === "super_admin") return <AdminMessages />;
   return <MemberMessages />;
 }
 

@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "nablis",
+    "platforms": ["android"],
     "assetBundlePatterns": [
       "**/*"
     ],

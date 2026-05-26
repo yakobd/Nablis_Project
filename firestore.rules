@@ -11,14 +11,24 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function isSuperAdmin() {
+      return authed() && userDoc().role == 'super_admin';
+    }
+
+    // isAdmin() covers both admin and super_admin roles
     function isAdmin() {
-      return authed() && userDoc().role == 'admin';
+      return authed()
+          && (userDoc().role == 'admin' || userDoc().role == 'super_admin');
     }
 
     function isActiveMember() {
       return authed()
           && userDoc().role == 'member'
           && userDoc().status == 'active';
+    }
+
+    function isActiveUser() {
+      return authed() && userDoc().status == 'active';
     }
 
     function isOwner(uid) {
@@ -31,27 +41,34 @@ service cloud.firestore {
 
     // ── /users/{uid} ───────────────────────────────────────────────────────────
     match /users/{uid} {
-      // Any authenticated user can read their own profile; admins see all
+      // Users read their own profile; admins see all
       allow read: if isOwner(uid) || isAdmin();
-      // New sign-ups create their own doc with role='member' only
+
+      // New sign-ups create their own doc with role='member' and status='pending'
       allow create: if isOwner(uid)
                     && request.resource.data.role == 'member'
                     && request.resource.data.status == 'pending';
-      // Members can update their own non-privileged fields; admin can update anything
-      allow update: if isAdmin()
-                    || (isOwner(uid) && !onlyChanges(['role', 'status']));
-      allow delete: if isAdmin();
+
+      // Super admin can update any field (role, status).
+      // Regular admin can update anything except role.
+      // Members can update their own non-privileged fields.
+      allow update: if isSuperAdmin()
+                    || (isAdmin() && !onlyChanges(['role']))
+                    || (isOwner(uid) && !request.resource.data.diff(resource.data)
+                          .affectedKeys().hasAny(['role', 'status']));
+
+      allow delete: if isSuperAdmin();
     }
 
     // ── /appointments/{id} ────────────────────────────────────────────────────
     match /appointments/{id} {
       allow read: if isAdmin()
-                  || (isActiveMember() && resource.data.memberId == request.auth.uid);
-      // Members can only create pending appointments for themselves
-      allow create: if isActiveMember()
-                    && request.resource.data.memberId == request.auth.uid
+                  || (isActiveUser() && resource.data.userId == request.auth.uid)
+                  || (isActiveUser() && resource.data.memberId == request.auth.uid);
+      allow create: if isActiveUser()
+                    && (request.resource.data.userId == request.auth.uid
+                        || request.resource.data.memberId == request.auth.uid)
                     && request.resource.data.status == 'pending';
-      // Only admin can confirm / reject
       allow update, delete: if isAdmin();
     }
 
@@ -65,7 +82,7 @@ service cloud.firestore {
     match /prayerLogs/{id} {
       allow read: if isAdmin()
                   || (authed() && resource.data.userId == request.auth.uid);
-      allow create: if isActiveMember()
+      allow create: if isActiveUser()
                     && request.resource.data.userId == request.auth.uid;
       allow update, delete: if isAdmin();
     }
@@ -73,29 +90,34 @@ service cloud.firestore {
     // ── /attendance/{id} ──────────────────────────────────────────────────────
     match /attendance/{id} {
       allow read:  if authed();
-      // Admin manages meetings; active members can add themselves to attendees
       allow create, delete: if isAdmin();
       allow update: if isAdmin()
-                    || (isActiveMember() && onlyChanges(['attendees']));
+                    || (isActiveUser() && onlyChanges(['attendees']));
+    }
+
+    // ── /checkIns/{id} ────────────────────────────────────────────────────────
+    match /checkIns/{id} {
+      allow read: if isAdmin()
+                  || (authed() && resource.data.userId == request.auth.uid);
+      allow create: if isActiveUser()
+                    && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
     }
 
     // ── /blogPosts/{id} ───────────────────────────────────────────────────────
     match /blogPosts/{id} {
-      // Published posts are public; drafts are admin-only
       allow read:  if resource.data.status == 'published' || isAdmin();
-      // Members can comment; only admin can create / fully update posts
       allow create, delete: if isAdmin();
       allow update: if isAdmin()
-                    || (isActiveMember() && onlyChanges(['comments']));
+                    || (isActiveUser() && onlyChanges(['comments']));
     }
 
     // ── /events/{id} ──────────────────────────────────────────────────────────
     match /events/{id} {
       allow read:   if true;
       allow create, delete: if isAdmin();
-      // Active members can update only the rsvps field (self-register)
       allow update: if isAdmin()
-                    || (isActiveMember() && onlyChanges(['rsvps']));
+                    || (isActiveUser() && onlyChanges(['rsvps']));
     }
 
     // ── /gallery/{id} ─────────────────────────────────────────────────────────
@@ -104,19 +126,54 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── /conversations/{id} ───────────────────────────────────────────────────
+    match /conversations/{id} {
+      allow read: if isAdmin()
+                  || (isActiveUser() && resource.data.memberId == request.auth.uid);
+      allow create: if isActiveUser()
+                    && request.resource.data.memberId == request.auth.uid;
+      allow update: if isAdmin()
+                    || (isActiveUser() && resource.data.memberId == request.auth.uid);
+      allow delete: if isAdmin();
+
+      // Sub-collection: messages within a conversation
+      match /messages/{msgId} {
+        allow read: if isAdmin()
+                    || (isActiveUser()
+                        && get(/databases/$(database)/documents/conversations/$(id)).data.memberId == request.auth.uid);
+        allow create: if isActiveUser() || isAdmin();
+        allow update, delete: if isAdmin();
+      }
+    }
+
     // ── /messages/{id} ────────────────────────────────────────────────────────
     match /messages/{id} {
       allow read: if isAdmin()
-                  || (isActiveMember()
+                  || (isActiveUser()
                       && (resource.data.senderId == request.auth.uid
                           || resource.data.receiverId == request.auth.uid));
-      allow create: if isActiveMember()
+      allow create: if isActiveUser()
                     && request.resource.data.senderId == request.auth.uid;
-      // Recipient can only mark as read
       allow update: if isAdmin()
                     || (authed()
                         && resource.data.receiverId == request.auth.uid
                         && onlyChanges(['read']));
+      allow delete: if isAdmin();
+    }
+
+    // ── /testimonials/{id} ────────────────────────────────────────────────────
+    match /testimonials/{id} {
+      allow read: if resource.data.status == 'published'
+                  || isAdmin()
+                  || (authed() && resource.data.authorId == request.auth.uid);
+      allow create: if isActiveUser()
+                    && request.resource.data.authorId == request.auth.uid
+                    && request.resource.data.status == 'pending';
+      allow update: if isAdmin()
+                    || (isOwner(resource.data.authorId)
+                        && resource.data.status == 'pending'
+                        && !request.resource.data.diff(resource.data)
+                              .affectedKeys().hasAny(['status', 'likes']));
       allow delete: if isAdmin();
     }
 
@@ -125,11 +182,9 @@ service cloud.firestore {
       allow read: if resource.data.status == 'published'
                   || isAdmin()
                   || (authed() && resource.data.authorId == request.auth.uid);
-      // Members submit with status='pending'; admin approves
-      allow create: if isActiveMember()
+      allow create: if isActiveUser()
                     && request.resource.data.authorId == request.auth.uid
                     && request.resource.data.status == 'pending';
-      // Authors can edit their pending testimonies (not status/likes)
       allow update: if isAdmin()
                     || (isOwner(resource.data.authorId)
                         && resource.data.status == 'pending'
@@ -142,9 +197,8 @@ service cloud.firestore {
     match /bibleStudies/{id} {
       allow read:  if authed();
       allow create, delete: if isAdmin();
-      // Members can join (add themselves to members[])
       allow update: if isAdmin()
-                    || (isActiveMember() && onlyChanges(['members']));
+                    || (isActiveUser() && onlyChanges(['members']));
     }
 
     // ── /notifications/{id} ───────────────────────────────────────────────────
@@ -152,7 +206,6 @@ service cloud.firestore {
       allow read: if isAdmin()
                   || (authed() && resource.data.userId == request.auth.uid);
       allow create: if isAdmin();
-      // Users can only mark their own notifications as read
       allow update: if isAdmin()
                     || (authed()
                         && resource.data.userId == request.auth.uid
@@ -164,9 +217,8 @@ service cloud.firestore {
     match /challenges/{id} {
       allow read:   if authed();
       allow create, delete: if isAdmin();
-      // Members can join challenges (add themselves to participants[])
       allow update: if isAdmin()
-                    || (isActiveMember() && onlyChanges(['participants']));
+                    || (isActiveUser() && onlyChanges(['participants']));
     }
   }
 }

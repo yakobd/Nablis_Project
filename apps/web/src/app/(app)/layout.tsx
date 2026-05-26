@@ -1,4 +1,4 @@
-// LAYOUT VERSION 3 - PURE TAILWIND - NO UI IMPORTS
+// LAYOUT VERSION 4 - STATUS-AWARE ROUTING
 'use client';
 
 import React, { useEffect } from 'react';
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { key: 'attendance', label: 'Attendance', path: '/attendance' },
   { key: 'gallery', label: 'Gallery', path: '/gallery-app' },
   { key: 'testimonials', label: 'Testimonials', path: '/testimonials' },
+  { key: 'members', label: 'Members', path: '/members', roles: ['super_admin', 'admin'] },
   { key: 'settings', label: 'Settings', path: '/settings/profile' },
 ];
 
@@ -29,6 +30,7 @@ function getActiveKey(pathname: string): string {
   if (pathname.startsWith('/attendance')) return 'attendance';
   if (pathname.startsWith('/gallery-app')) return 'gallery';
   if (pathname.startsWith('/testimonials')) return 'testimonials';
+  if (pathname.startsWith('/members')) return 'members';
   if (pathname.startsWith('/settings')) return 'settings';
   return 'dashboard';
 }
@@ -36,9 +38,42 @@ function getActiveKey(pathname: string): string {
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, loading, signOut } = useAuth();
-  const isLoginPage = pathname === '/login';
+  const { user, role, loading, signOut } = useAuth();
 
+  const isLoginPage    = pathname === '/login';
+  const isRegisterPage = pathname === '/register';
+  const isPendingPage  = pathname === '/pending';
+  const isPublicPage   = isLoginPage || isRegisterPage;
+
+  // Status-aware routing
+  useEffect(() => {
+    if (loading) return;
+
+    if (!user) {
+      // Unauthenticated: allow login/register, redirect everything else
+      if (!isPublicPage) router.replace('/login');
+      return;
+    }
+
+    // Rejected: sign out and send to login
+    if (user.status === 'rejected') {
+      signOut().then(() => router.replace('/login'));
+      return;
+    }
+
+    // Pending: hold them on the pending page
+    if (user.status === 'pending') {
+      if (!isPendingPage) router.replace('/pending');
+      return;
+    }
+
+    // Active user: redirect away from auth/pending pages
+    if (isPublicPage || isPendingPage) {
+      router.replace('/dashboard');
+    }
+  }, [loading, user?.id, user?.status, isPublicPage, isPendingPage, router, signOut]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Session cookie management
   useEffect(() => {
     if (!loading) {
       if (user) {
@@ -49,16 +84,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [loading, user]);
 
-  useEffect(() => {
-    if (!loading && !user && !isLoginPage) router.replace('/login');
-  }, [user, loading, isLoginPage, router]);
-
-  useEffect(() => {
-    if (!loading && user && isLoginPage) router.replace('/dashboard');
-  }, [loading, user, isLoginPage, router]);
-
-  if (isLoginPage) {
-    if (!loading && user) return null;
+  // Public auth pages — no sidebar
+  if (isPublicPage || isPendingPage) {
+    if (!loading && user && user.status === 'active' && (isPublicPage || isPendingPage)) return null;
     return <>{children}</>;
   }
 
@@ -73,6 +101,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!user) return null;
 
   const activeKey = getActiveKey(pathname);
+  const visibleNav = NAV_ITEMS.filter((item) =>
+    !item.roles || item.roles.includes(role ?? '')
+  );
 
   return (
     <div className="flex min-h-screen bg-[#EEF1F8]">
@@ -85,7 +116,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Nav items */}
         <nav className="flex-1 px-3 py-2">
-          {NAV_ITEMS.map((item) => (
+          {visibleNav.map((item) => (
             <button
               key={item.key}
               onClick={() => router.push(item.path)}

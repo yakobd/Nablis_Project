@@ -305,7 +305,7 @@ export default function MemberDetailPage() {
           break;
         case "delete":
           await deleteDoc(ref);
-          router.replace("/settings/members");
+          router.replace("/members");
           return;
       }
     } finally {
@@ -356,7 +356,7 @@ export default function MemberDetailPage() {
 
       {/* breadcrumb */}
       <div className="flex items-center gap-2 text-sm">
-        <Link href="/settings/members" className="flex items-center gap-1 text-[#6B7280] hover:text-[#1B2E6B] transition-colors">
+        <Link href="/members" className="flex items-center gap-1 text-[#6B7280] hover:text-[#1B2E6B] transition-colors">
           <ArrowLeft size={14} /> Members
         </Link>
         <span className="text-[#D1D5DB]">/</span>

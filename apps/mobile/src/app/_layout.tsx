@@ -1,29 +1,46 @@
-import { Stack } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { auth } from '@nablis/shared/firebase';
-import { useRouter, useSegments } from 'expo-router';
-import { onAuthStateChanged } from 'firebase/auth';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useAuth } from '@nablis/shared/firebase';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
+  const { firebaseUser, user, loading } = useAuth();
+  const router   = useRouter();
   const segments = useSegments();
-  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      const inAuth = segments[0] === '(auth)';
-      if (!user && !inAuth) {
-        router.replace('/(auth)/login');
-      } else if (user && inAuth) {
-        router.replace('/(tabs)/home');
-      }
-      setChecked(true);
-    });
-    return unsub;
-  }, [segments]);
+    if (loading) return;
 
-  if (!checked) return null;
+    const inAuth    = segments[0] === '(auth)';
+    const inPending = inAuth && segments[1] === 'pending';
+    const inTabs    = segments[0] === '(tabs)';
+
+    // Not logged in → login screen (but stay if already in auth, except pending)
+    if (!firebaseUser) {
+      if (!inAuth || inPending) router.replace('/(auth)/login');
+      return;
+    }
+
+    // Logged in but Firestore profile not yet loaded — wait
+    if (!user) return;
+
+    if (user.status === 'pending') {
+      if (!inPending) router.replace('/(auth)/pending');
+      return;
+    }
+
+    if (user.status === 'rejected') {
+      // Rejected users land back on login where a message can be shown
+      if (!inAuth) router.replace('/(auth)/login');
+      return;
+    }
+
+    // Active user sitting in any auth screen → send to app
+    if (inAuth) router.replace('/(tabs)/home');
+  }, [loading, firebaseUser?.uid, user?.status, segments]);
+
+  // Render nothing while resolving — no flash, no spinner
+  if (loading) return null;
   return <>{children}</>;
 }
 

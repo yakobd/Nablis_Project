@@ -37,9 +37,19 @@ export interface User {
   email: string;
   displayName: string;
   photoURL: string | null;
-  role: 'admin' | 'member';
+  role: 'super_admin' | 'admin' | 'member';
   status: 'active' | 'pending' | 'rejected';
   createdAt: Timestamp;
+
+  // Registration fields
+  phoneNumber?: string;
+  countryOfResidence?: string;
+  cityOfResidence?: string;
+  neighborhood?: string;
+  parishChurch?: string;
+  christianName?: string;
+
+  // Legacy / optional
   phone?: string;
   address?: string;
   birthday?: Timestamp;
@@ -50,6 +60,7 @@ export interface User {
 
 export interface Appointment {
   id: string;
+  userId: string;
   memberId: string;
   memberName: string;
   serviceType: 'confession' | 'counseling' | 'marriage' | 'other';
@@ -57,6 +68,8 @@ export interface Appointment {
   time: string;
   status: 'pending' | 'confirmed' | 'rejected';
   privateNote?: string;
+  notified?: boolean;
+  updatedAt?: Timestamp;
   createdAt: Timestamp;
 }
 
@@ -149,7 +162,7 @@ export interface Testimony {
   title: string;
   content: string;
   category: 'healing' | 'provision' | 'restoration' | 'other';
-  status: 'pending' | 'published';
+  status: 'pending' | 'published' | 'rejected';
   likes: number;
   createdAt: Timestamp;
 }
@@ -182,4 +195,22 @@ export interface Challenge {
   endDate: Timestamp;
   createdBy: string;
   participants: string[];
+}
+
+export interface Conversation {
+  id: string;
+  memberId: string;
+  memberName: string;
+  lastMessage: string;
+  lastAt?: Timestamp;
+  unread: number;
+  createdAt: Timestamp;
+}
+
+export interface CheckIn {
+  id: string;
+  userId: string;
+  userName: string;
+  checkedInAt: Timestamp;
+  sessionId?: string;
 }

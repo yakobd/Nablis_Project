@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { useAuth } from "@/lib/firebase";
 import { Eye, EyeOff, AlertCircle } from "lucide-react";
+import Link from "next/link";
 
 const ERROR_MESSAGES: Record<string, string> = {
   "auth/invalid-credential": "Incorrect email or password. Please try again.",
@@ -115,9 +116,17 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-center text-[#9CA3AF] text-xs mt-6">
-          Nablis Ministry · Dubai, UAE
-        </p>
+        <div className="text-center mt-5 space-y-2">
+          <p className="text-[#9CA3AF] text-xs">
+            Don&apos;t have an account?{" "}
+            <Link href="/register" className="text-[#1B2E6B] font-semibold hover:underline">
+              Create Account
+            </Link>
+          </p>
+          <p className="text-center text-[#9CA3AF] text-xs">
+            Nablis Ministry · Dubai, UAE
+          </p>
+        </div>
       </div>
     </div>
   );

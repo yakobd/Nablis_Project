@@ -20,7 +20,8 @@
       "PowerShell($env:NPM_CONFIG_LEGACY_PEER_DEPS = \"true\"; $proc = Start-Process -FilePath \"npx\" -ArgumentList \"expo\",\"start\",\"--port\",\"8082\",\"--lan\",\"--clear\" -WorkingDirectory \"c:\\\\Users\\\\Yakob\\\\Desktop\\\\Nablis Project\\\\Nablis Project\\\\apps\\\\mobile\" -RedirectStandardOutput \"$env:TEMP\\\\expo_out5.txt\" -RedirectStandardError \"$env:TEMP\\\\expo_err5.txt\" -PassThru -NoNewWindow; Start-Sleep -Seconds 45; Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue; Get-Content \"$env:TEMP\\\\expo_out5.txt\" -ErrorAction SilentlyContinue; Write-Host \"---STDERR---\"; Get-Content \"$env:TEMP\\\\expo_err5.txt\" -ErrorAction SilentlyContinue)",
       "Bash(taskkill /PID 5212 /F)",
       "PowerShell(Stop-Process -Id 5212 -Force)",
-      "PowerShell($connections = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue; $connections | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue; Write-Host \"Killed PID $\\($_.OwningProcess\\)\" })"
+      "PowerShell($connections = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue; $connections | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue; Write-Host \"Killed PID $\\($_.OwningProcess\\)\" })",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/login)"
     ]
   }
 }

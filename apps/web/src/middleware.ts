@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 const PROTECTED = [
   "/dashboard", "/settings", "/messaging", "/blogs", "/events",
   "/attendance", "/testimonials", "/appointment", "/bible-study",
-  "/daily-prayers", "/gallery-app",
+  "/daily-prayers", "/gallery-app", "/members",
 ];
 const LOGIN = "/login";
 
@@ -53,6 +53,7 @@ export const config = {
     "/bible-study/:path*",
     "/daily-prayers/:path*",
     "/gallery-app/:path*",
+    "/members/:path*",
     "/login",
   ],
 };
