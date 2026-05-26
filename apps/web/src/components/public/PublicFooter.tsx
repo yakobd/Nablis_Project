@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import { Phone, Mail, MapPin, Facebook, Youtube, Instagram } from "lucide-react";
+import { Phone, Mail, MapPin, Share2, Play, Camera } from "lucide-react";
 
 const LINKS = [
   { href: "/", label: "Home" },
@@ -32,9 +32,9 @@ export function PublicFooter() {
             </p>
             <div className="flex gap-2">
               {[
-                { Icon: Facebook, href: "#" },
-                { Icon: Youtube, href: "#" },
-                { Icon: Instagram, href: "#" },
+                { Icon: Share2, href: "#" },
+                { Icon: Play,   href: "#" },
+                { Icon: Camera, href: "#" },
               ].map(({ Icon, href }, i) => (
                 <a
                   key={i}

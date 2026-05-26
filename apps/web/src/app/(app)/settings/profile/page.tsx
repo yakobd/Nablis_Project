@@ -157,7 +157,7 @@ function ToggleRow({
 function getField(user: ReturnType<typeof useAuth>["user"], ...keys: string[]) {
   if (!user) return "";
   for (const k of keys) {
-    const v = (user as Record<string, unknown>)[k];
+    const v = (user as unknown as Record<string, unknown>)[k];
     if (v && typeof v === "string") return v;
   }
   return "";
@@ -239,7 +239,7 @@ export default function ProfilePage() {
   /* init form from Firestore user */
   useEffect(() => {
     if (!user) return;
-    const u = user as Record<string, unknown>;
+    const u = user as unknown as Record<string, unknown>;
     setDisplayName((u.displayName as string) ?? "");
     setChristianName((u.christianName as string) ?? "");
     setPhone(

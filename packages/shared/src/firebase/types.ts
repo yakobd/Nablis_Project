@@ -38,7 +38,7 @@ export interface User {
   displayName: string;
   photoURL: string | null;
   role: 'super_admin' | 'admin' | 'member';
-  status: 'active' | 'pending' | 'rejected';
+  status: 'active' | 'pending' | 'rejected' | 'suspended';
   createdAt: Timestamp;
 
   // Registration fields

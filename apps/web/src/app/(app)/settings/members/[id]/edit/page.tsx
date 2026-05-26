@@ -37,8 +37,8 @@ export default function EditMemberPage() {
   const [address, setAddress]         = useState("");
   const [city, setCity]               = useState("");
   const [zip, setZip]                 = useState("");
-  const [role, setRole]               = useState<"admin" | "member">("member");
-  const [status, setStatus]           = useState<"active" | "pending" | "rejected">("pending");
+  const [role, setRole]               = useState<"super_admin" | "admin" | "member">("member");
+  const [status, setStatus]           = useState<"active" | "pending" | "rejected" | "suspended">("pending");
 
   useEffect(() => {
     async function load() {

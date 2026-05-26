@@ -25,6 +25,10 @@
     "react-native-worklets-core": "^1.6.3",
     "turbo": "^2.0.0"
   },
+  "overrides": {
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.0"
+  },
   "engines": {
     "node": ">=18"
   },
