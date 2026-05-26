@@ -1,0 +1,170 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "messaging": "Messaging",
+    "bibleStudy": "Bible Study",
+    "dailyPrayers": "Daily Prayers",
+    "appointment": "Appointment",
+    "blogs": "Blogs",
+    "events": "Events",
+    "attendance": "Attendance",
+    "gallery": "Gallery",
+    "testimonials": "Testimonials",
+    "settings": "Settings",
+    "logout": "Logout"
+  },
+  "app": {
+    "name": "ናብሊስ",
+    "tagline": "Community Platform"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "back": "Back",
+    "next": "Next",
+    "done": "Done",
+    "yes": "Yes",
+    "no": "No",
+    "search": "Search",
+    "searchPlaceholder": "Search anything...",
+    "submit": "Submit",
+    "close": "Close",
+    "confirm": "Confirm",
+    "create": "Create",
+    "update": "Update",
+    "view": "View",
+    "download": "Download",
+    "share": "Share",
+    "filter": "Filter",
+    "sort": "Sort",
+    "noResults": "No results found",
+    "noData": "No data available"
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "signOut": "Sign Out",
+    "signUp": "Sign Up",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "forgotPassword": "Forgot Password?",
+    "resetPassword": "Reset Password",
+    "welcome": "Welcome to Nablis",
+    "welcomeBack": "Welcome back",
+    "profile": "Profile",
+    "myAccount": "My Account"
+  },
+  "topbar": {
+    "searchPlaceholder": "Search...",
+    "notifications": "Notifications",
+    "messages": "Messages",
+    "profileMenu": "Profile menu"
+  },
+  "status": {
+    "pending": "Pending",
+    "confirmed": "Confirmed",
+    "rejected": "Rejected",
+    "member": "Member",
+    "admin": "Admin",
+    "active": "Active",
+    "inactive": "Inactive"
+  },
+  "validation": {
+    "required": "This field is required",
+    "invalidEmail": "Please enter a valid email address",
+    "passwordTooShort": "Password must be at least 8 characters",
+    "passwordMismatch": "Passwords do not match",
+    "tooShort": "Too short",
+    "tooLong": "Too long"
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "networkError": "Network error. Please check your connection.",
+    "notFound": "Page not found",
+    "unauthorized": "You are not authorized to view this page",
+    "forbidden": "Access denied"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Welcome back, {{name}}",
+    "recentActivity": "Recent Activity",
+    "quickStats": "Quick Stats"
+  },
+  "messaging": {
+    "title": "Messaging",
+    "subtitle": "Your conversations",
+    "newMessage": "New Message",
+    "noMessages": "No messages yet",
+    "typeMessage": "Type a message...",
+    "send": "Send"
+  },
+  "bibleStudy": {
+    "title": "Bible Study",
+    "subtitle": "Grow in faith together",
+    "newSession": "New Session",
+    "upcomingSessions": "Upcoming Sessions"
+  },
+  "dailyPrayers": {
+    "title": "Daily Prayers",
+    "subtitle": "Pray together every day",
+    "morningPrayer": "Morning Prayer",
+    "eveningPrayer": "Evening Prayer",
+    "addPrayer": "Add Prayer Request"
+  },
+  "appointment": {
+    "title": "Appointment",
+    "subtitle": "Book and manage appointments",
+    "bookAppointment": "Book Appointment",
+    "upcomingAppointments": "Upcoming Appointments",
+    "date": "Date",
+    "time": "Time"
+  },
+  "blogs": {
+    "title": "Blogs",
+    "subtitle": "Read and share stories",
+    "newPost": "New Post",
+    "readMore": "Read More",
+    "by": "By {{author}}"
+  },
+  "events": {
+    "title": "Events",
+    "subtitle": "Community events and gatherings",
+    "newEvent": "New Event",
+    "register": "Register",
+    "upcoming": "Upcoming Events"
+  },
+  "attendance": {
+    "title": "Attendance",
+    "subtitle": "Track member attendance",
+    "markAttendance": "Mark Attendance",
+    "present": "Present",
+    "absent": "Absent",
+    "total": "Total"
+  },
+  "gallery": {
+    "title": "Gallery",
+    "subtitle": "Photos and memories",
+    "upload": "Upload Photos",
+    "addAlbum": "Add Album"
+  },
+  "testimonials": {
+    "title": "Testimonials",
+    "subtitle": "Faith stories from our community",
+    "shareTestimony": "Share Your Testimony",
+    "readTestimony": "Read Testimony"
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Manage your preferences",
+    "language": "Language",
+    "notifications": "Notifications",
+    "privacy": "Privacy",
+    "security": "Security",
+    "appearance": "Appearance"
+  }
+}

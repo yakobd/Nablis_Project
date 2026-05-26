@@ -1,0 +1,14 @@
+{
+  "extends": "@nablis/tsconfig/base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["es2022", "dom"],
+    "module": "esnext",
+    "target": "es6",
+    "rootDir": "src",
+    "outDir": "dist",
+    "resolveJsonModule": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,5 @@
+{
+  "root": true,
+  "extends": ["@nablis/eslint-config/react-native.js"],
+  "rules": {}
+}

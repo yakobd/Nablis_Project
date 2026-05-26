@@ -1,0 +1,38 @@
+{
+  "name": "nablis",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "scripts"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "dev:web": "turbo run dev --filter=web",
+    "dev:mobile": "turbo run dev --filter=mobile",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\""
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.10",
+    "expo": "^54.0.0",
+    "prettier": "^3.2.0",
+    "react": "^18.3.1 || ^19.0.0",
+    "react-dom": "^18.3.1 || ^19.0.0",
+    "react-native-worklets-core": "^1.6.3",
+    "turbo": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "npm@10.5.0",
+  "dependencies": {
+    "@expo/metro-runtime": "~6.1.2",
+    "promise": "^8.3.0",
+    "react-dom": "19.1.0",
+    "react-native-web": "^0.21.0"
+  }
+}

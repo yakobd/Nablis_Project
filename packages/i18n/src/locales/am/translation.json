@@ -1,0 +1,170 @@
+{
+  "nav": {
+    "dashboard": "ዳሽቦርድ",
+    "messaging": "መልዕክቶች",
+    "bibleStudy": "የመጽሐፍ ቅዱስ ጥናት",
+    "dailyPrayers": "ዕለታዊ ጸሎቶች",
+    "appointment": "ቀጠሮ",
+    "blogs": "ብሎጎች",
+    "events": "ዝግጅቶች",
+    "attendance": "ተሳትፎ",
+    "gallery": "ጋለሪ",
+    "testimonials": "ምስክርነቶች",
+    "settings": "ቅንብሮች",
+    "logout": "ውጣ"
+  },
+  "app": {
+    "name": "ናብሊስ",
+    "tagline": "የማህበረሰብ መድረክ"
+  },
+  "common": {
+    "loading": "በመጫን ላይ...",
+    "error": "ስህተት ተከሰተ",
+    "retry": "እንደገና ሞክር",
+    "cancel": "ሰርዝ",
+    "save": "አስቀምጥ",
+    "delete": "ሰርዝ",
+    "edit": "አርም",
+    "back": "ተመለስ",
+    "next": "ቀጣይ",
+    "done": "ተጠናቋል",
+    "yes": "አዎ",
+    "no": "አይ",
+    "search": "ፈልግ",
+    "searchPlaceholder": "ፈልግ...",
+    "submit": "አስገባ",
+    "close": "ዝጋ",
+    "confirm": "አረጋግጥ",
+    "create": "ፍጠር",
+    "update": "አዘምን",
+    "view": "ተመልከት",
+    "download": "አውርድ",
+    "share": "አጋራ",
+    "filter": "አጣራ",
+    "sort": "ደርድር",
+    "noResults": "ምንም ውጤት አልተገኘም",
+    "noData": "ምንም መረጃ የለም"
+  },
+  "auth": {
+    "signIn": "ግባ",
+    "signOut": "ውጣ",
+    "signUp": "ተመዝገብ",
+    "email": "ኢሜይል",
+    "password": "የሚስጢር ቃል",
+    "confirmPassword": "የሚስጢር ቃልን አረጋግጥ",
+    "forgotPassword": "የሚስጢር ቃልህን ረሳህ?",
+    "resetPassword": "የሚስጢር ቃልን ዳግም አስጀምር",
+    "welcome": "ወደ ናብሊስ እንኳን ደህና መጡ",
+    "welcomeBack": "እንኳን ደህና ተመለሱ",
+    "profile": "መገለጫ",
+    "myAccount": "የኔ መለያ"
+  },
+  "topbar": {
+    "searchPlaceholder": "ፈልግ...",
+    "notifications": "ማሳወቂያዎች",
+    "messages": "መልዕክቶች",
+    "profileMenu": "የመገለጫ ምናሌ"
+  },
+  "status": {
+    "pending": "በመጠባበቅ ላይ",
+    "confirmed": "ተረጋግጧል",
+    "rejected": "ተቀባይነት አላገኘም",
+    "member": "አባል",
+    "admin": "አስተዳዳሪ",
+    "active": "ንቁ",
+    "inactive": "ንቁ አይደለም"
+  },
+  "validation": {
+    "required": "ይህ መስክ ያስፈልጋል",
+    "invalidEmail": "ትክክለኛ ኢሜይል አድራሻ ያስገቡ",
+    "passwordTooShort": "የሚስጢር ቃሉ ቢያንስ 8 ቁምፊዎች ሊኖረው ይገባል",
+    "passwordMismatch": "የሚስጢር ቃሎቹ አይዛመዱም",
+    "tooShort": "በጣም አጭር ነው",
+    "tooLong": "በጣም ረጅም ነው"
+  },
+  "errors": {
+    "generic": "ችግር ተፈጠረ። እንደገና ይሞክሩ።",
+    "networkError": "የኔትወርክ ስህተት። ግንኙነትዎን ያረጋግጡ።",
+    "notFound": "ገፁ አልተገኘም",
+    "unauthorized": "ይህን ገፅ ለማየት ፈቃድ የለዎትም",
+    "forbidden": "መዳረሻ ተከልክሏል"
+  },
+  "dashboard": {
+    "title": "ዳሽቦርድ",
+    "subtitle": "እንኳን ደህና ተመለሱ፣ {{name}}",
+    "recentActivity": "የቅርብ ጊዜ እንቅስቃሴ",
+    "quickStats": "ፈጣን ስታቲስቲክስ"
+  },
+  "messaging": {
+    "title": "መልዕክቶች",
+    "subtitle": "ውይይቶችዎ",
+    "newMessage": "አዲስ መልዕክት",
+    "noMessages": "ምንም መልዕክቶች የሉም",
+    "typeMessage": "መልዕክት ይጻፉ...",
+    "send": "ላክ"
+  },
+  "bibleStudy": {
+    "title": "የመጽሐፍ ቅዱስ ጥናት",
+    "subtitle": "አብረን እምነት እናጸና",
+    "newSession": "አዲስ ጊዜ",
+    "upcomingSessions": "መጪ ጊዜያት"
+  },
+  "dailyPrayers": {
+    "title": "ዕለታዊ ጸሎቶች",
+    "subtitle": "ሁልቀን አብረን እንጸልይ",
+    "morningPrayer": "የጠዋት ጸሎት",
+    "eveningPrayer": "የምሽት ጸሎት",
+    "addPrayer": "የጸሎት ጥያቄ ጨምር"
+  },
+  "appointment": {
+    "title": "ቀጠሮ",
+    "subtitle": "ቀጠሮዎችን ያቅዱ እና ያስተዳድሩ",
+    "bookAppointment": "ቀጠሮ ያስይዙ",
+    "upcomingAppointments": "መጪ ቀጠሮዎች",
+    "date": "ቀን",
+    "time": "ሰዓት"
+  },
+  "blogs": {
+    "title": "ብሎጎች",
+    "subtitle": "ታሪኮችን ያንብቡ እና ያጋሩ",
+    "newPost": "አዲስ ፅሁፍ",
+    "readMore": "ተጨማሪ አንብብ",
+    "by": "በ {{author}}"
+  },
+  "events": {
+    "title": "ዝግጅቶች",
+    "subtitle": "የማህበረሰብ ዝግጅቶች",
+    "newEvent": "አዲስ ዝግጅት",
+    "register": "ተመዝገብ",
+    "upcoming": "መጪ ዝግጅቶች"
+  },
+  "attendance": {
+    "title": "ተሳትፎ",
+    "subtitle": "የአባላት ተሳትፎ ይከታተሉ",
+    "markAttendance": "ተሳትፎ ምልክት አድርግ",
+    "present": "ቀርቧል",
+    "absent": "አልቀረበም",
+    "total": "ጠቅላላ"
+  },
+  "gallery": {
+    "title": "ጋለሪ",
+    "subtitle": "ፎቶዎች እና ትዝታዎች",
+    "upload": "ፎቶዎች ይጫኑ",
+    "addAlbum": "አልበም ጨምር"
+  },
+  "testimonials": {
+    "title": "ምስክርነቶች",
+    "subtitle": "ከማህበረሰባችን የእምነት ታሪኮች",
+    "shareTestimony": "ምስክርነትዎን ያጋሩ",
+    "readTestimony": "ምስክርነት አንብብ"
+  },
+  "settings": {
+    "title": "ቅንብሮች",
+    "subtitle": "ምርጫዎችዎን ያስተዳድሩ",
+    "language": "ቋንቋ",
+    "notifications": "ማሳወቂያዎች",
+    "privacy": "ግላዊነት",
+    "security": "ደህንነት",
+    "appearance": "መልክ"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Nablis",
+    "slug": "nablis",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "nablis",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.nablis.app"
+    },
+    "android": {
+      "package": "com.nablis.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#1B2E6B"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-notifications",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "84c037fa-43d6-438b-8d8f-b239f169f742"
+      }
+    }
+  }
+}
