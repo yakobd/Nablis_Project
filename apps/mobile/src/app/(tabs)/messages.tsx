@@ -8,10 +8,12 @@ import {
   collection, query, orderBy, onSnapshot, addDoc, getDocs,
   where, doc, updateDoc, serverTimestamp, Timestamp,
 } from "firebase/firestore";
-import { db, useAuth } from "@nablis/shared/firebase";
+import { db } from '../../lib/firebase';
+import { useAuth } from '@nablis/shared/firebase';
 import { Ionicons } from "@expo/vector-icons";
 import { ChatBubble } from "../../components/ChatBubble";
 import { Avatar } from "../../components/Avatar";
+import { SidebarDrawer } from "../../components/SidebarDrawer";
 
 const C = {
   navy: "#1B2E6B", yellow: "#F5C518", light: "#EEF1F8",
@@ -53,11 +55,13 @@ function ChatView({
   headerTitle,
   headerSub,
   onBack,
+  onMenuPress,
 }: {
   convoId: string;
   headerTitle: string;
   headerSub: string;
   onBack?: () => void;
+  onMenuPress?: () => void;
 }) {
   const { user }   = useAuth();
   const insets     = useSafeAreaInsets();
@@ -108,6 +112,11 @@ function ChatView({
     >
       {/* Header */}
       <View style={styles.header}>
+        {onMenuPress && !onBack && (
+          <TouchableOpacity style={styles.backBtn} onPress={onMenuPress}>
+            <Ionicons name="menu" size={20} color={C.navy} />
+          </TouchableOpacity>
+        )}
         {onBack && (
           <TouchableOpacity style={styles.backBtn} onPress={onBack}>
             <Ionicons name="arrow-back" size={20} color={C.navy} />
@@ -190,6 +199,7 @@ function AdminMessages() {
   const [conversations, setConvos] = useState<Conversation[]>([]);
   const [loading, setLoading]      = useState(true);
   const [selected, setSelected]    = useState<Conversation | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -220,6 +230,9 @@ function AdminMessages() {
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.inboxHeader}>
+        <TouchableOpacity style={styles.hamburgerBtn} onPress={() => setSidebarOpen(true)}>
+          <Ionicons name="menu" size={22} color={C.navy} />
+        </TouchableOpacity>
         <Text style={styles.inboxTitle}>Messages</Text>
         <TouchableOpacity style={styles.refreshBtn} onPress={load}>
           <Ionicons name="refresh" size={18} color={C.navy} />
@@ -263,6 +276,7 @@ function AdminMessages() {
           ))}
         </ScrollView>
       )}
+      <SidebarDrawer visible={sidebarOpen} onClose={() => setSidebarOpen(false)} currentRoute="/(tabs)/messages" />
     </View>
   );
 }
@@ -273,6 +287,7 @@ function MemberMessages() {
   const insets         = useSafeAreaInsets();
   const [convoId, setConvoId]         = useState<string | null>(null);
   const [loadingConvo, setLoadingConvo] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -310,11 +325,15 @@ function MemberMessages() {
   }
 
   return (
-    <ChatView
-      convoId={convoId}
-      headerTitle="Spiritual Father"
-      headerSub="Chat with Your Father"
-    />
+    <View style={styles.root}>
+      <ChatView
+        convoId={convoId}
+        headerTitle="Spiritual Father"
+        headerSub="Chat with Your Father"
+        onMenuPress={() => setSidebarOpen(true)}
+      />
+      <SidebarDrawer visible={sidebarOpen} onClose={() => setSidebarOpen(false)} currentRoute="/(tabs)/messages" />
+    </View>
   );
 }
 
@@ -355,8 +374,9 @@ const styles = StyleSheet.create({
   sendDisabled:  { opacity: 0.5 },
 
   // Admin inbox
-  inboxHeader:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 16, backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: C.border },
-  inboxTitle:    { fontSize: 20, fontWeight: "800", color: C.navy },
+  inboxHeader:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 16, backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: C.border, gap: 10 },
+  hamburgerBtn:  { width: 36, height: 36, borderRadius: 10, backgroundColor: C.light, alignItems: "center", justifyContent: "center" },
+  inboxTitle:    { flex: 1, fontSize: 20, fontWeight: "800", color: C.navy },
   refreshBtn:    { width: 36, height: 36, borderRadius: 10, backgroundColor: C.light, alignItems: "center", justifyContent: "center" },
   convoRow:      { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border, backgroundColor: C.white },
   convoInfo:     { flex: 1 },

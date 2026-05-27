@@ -18,6 +18,7 @@ import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { Avatar } from "../../components/Avatar";
 import { BottomSheet } from "../../components/BottomSheet";
+import { SidebarDrawer } from "../../components/SidebarDrawer";
 
 const C = {
   navy:   "#1B2E6B", yellow: "#F5C518", light: "#EEF1F8",
@@ -416,6 +417,7 @@ function AdminProfile({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const insets     = useSafeAreaInsets();
   const router     = useRouter();
   const signOut    = useSignOut();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   function handleSignOut() {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -454,46 +456,55 @@ function AdminProfile({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const badgeFg    = isSuperAdmin ? C.navy              : C.yellow;
 
   return (
-    <ScrollView
-      style={[styles.root, { paddingTop: insets.top }]}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.profileHeader}>
-        <View style={styles.avatarWrap}>
-          <Avatar uri={user?.photoURL} name={user?.displayName || user?.email} size={80} bgColor={C.navy} textColor={C.yellow} />
-        </View>
-        <Text style={styles.userName}>{user?.displayName || "Admin"}</Text>
-        <Text style={styles.userEmail}>{user?.email}</Text>
-        <View style={[styles.memberBadge, { backgroundColor: badgeBg }]}>
-          <Text style={[styles.memberBadgeTxt, { color: badgeFg }]}>{badgeLabel}</Text>
-        </View>
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <View style={styles.topBar}>
+        <TouchableOpacity style={styles.hamburgerBtn} onPress={() => setSidebarOpen(true)}>
+          <Ionicons name="menu" size={22} color={C.navy} />
+        </TouchableOpacity>
+        <Text style={styles.topBarTitle}>Profile</Text>
+        <View style={{ width: 36 }} />
       </View>
-
-      {MENU_GROUPS.map((group, gi) => (
-        <View key={gi} style={styles.menuGroup}>
-          {group.map((item, ii) => (
-            <TouchableOpacity
-              key={item.label}
-              style={[styles.menuItem, ii < group.length - 1 && styles.menuItemBorder]}
-              onPress={() => navigate(item.route, item.onPress)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.menuIcon, item.color ? { backgroundColor: "#FEF2F2" } : {}]}>
-                <Ionicons name={item.icon} size={18} color={item.color ?? C.navy} />
-              </View>
-              <Text style={[styles.menuLabel, item.color ? { color: item.color } : {}]}>
-                {item.label}
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color={item.color ?? C.grey} style={styles.menuChev} />
-            </TouchableOpacity>
-          ))}
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.profileHeader}>
+          <View style={styles.avatarWrap}>
+            <Avatar uri={user?.photoURL} name={user?.displayName || user?.email} size={80} bgColor={C.navy} textColor={C.yellow} />
+          </View>
+          <Text style={styles.userName}>{user?.displayName || "Admin"}</Text>
+          <Text style={styles.userEmail}>{user?.email}</Text>
+          <View style={[styles.memberBadge, { backgroundColor: badgeBg }]}>
+            <Text style={[styles.memberBadgeTxt, { color: badgeFg }]}>{badgeLabel}</Text>
+          </View>
         </View>
-      ))}
 
-      <Text style={styles.version}>Nablis v1.0.0 · Ethiopian Orthodox Ministry</Text>
-      <View style={{ height: 32 }} />
-    </ScrollView>
+        {MENU_GROUPS.map((group, gi) => (
+          <View key={gi} style={styles.menuGroup}>
+            {group.map((item, ii) => (
+              <TouchableOpacity
+                key={item.label}
+                style={[styles.menuItem, ii < group.length - 1 && styles.menuItemBorder]}
+                onPress={() => navigate(item.route, item.onPress)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.menuIcon, item.color ? { backgroundColor: "#FEF2F2" } : {}]}>
+                  <Ionicons name={item.icon} size={18} color={item.color ?? C.navy} />
+                </View>
+                <Text style={[styles.menuLabel, item.color ? { color: item.color } : {}]}>
+                  {item.label}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={item.color ?? C.grey} style={styles.menuChev} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        ))}
+
+        <Text style={styles.version}>Nablis v1.0.0 · Ethiopian Orthodox Ministry</Text>
+        <View style={{ height: 32 }} />
+      </ScrollView>
+      <SidebarDrawer visible={sidebarOpen} onClose={() => setSidebarOpen(false)} currentRoute="/(tabs)/profile" />
+    </View>
   );
 }
 
@@ -508,6 +519,7 @@ function MemberProfile() {
   const [loading, setLoading] = useState(true);
   const [showEditProfile,    setShowEditProfile]    = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -565,9 +577,15 @@ function MemberProfile() {
   ];
 
   return (
-    <>
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <View style={styles.topBar}>
+        <TouchableOpacity style={styles.hamburgerBtn} onPress={() => setSidebarOpen(true)}>
+          <Ionicons name="menu" size={22} color={C.navy} />
+        </TouchableOpacity>
+        <Text style={styles.topBarTitle}>Profile</Text>
+        <View style={{ width: 36 }} />
+      </View>
       <ScrollView
-        style={[styles.root, { paddingTop: insets.top }]}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
@@ -649,7 +667,8 @@ function MemberProfile() {
         visible={showChangePassword}
         onClose={() => setShowChangePassword(false)}
       />
-    </>
+      <SidebarDrawer visible={sidebarOpen} onClose={() => setSidebarOpen(false)} currentRoute="/(tabs)/profile" />
+    </View>
   );
 }
 
@@ -663,6 +682,9 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   root:          { flex: 1, backgroundColor: C.bg },
+  topBar:        { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.bg },
+  hamburgerBtn:  { width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
+  topBarTitle:   { fontSize: 17, fontWeight: "800", color: C.navy },
   content:       { paddingHorizontal: 16, paddingTop: 16 },
   profileHeader: { alignItems: "center", marginBottom: 20 },
   avatarWrap:    { position: "relative", marginBottom: 12 },

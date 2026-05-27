@@ -1,18 +1,20 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  RefreshControl, Modal, ActivityIndicator, Alert,
+  RefreshControl, ActivityIndicator, Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   collection, query, where, getDocs, addDoc, updateDoc, doc,
   serverTimestamp, Timestamp,
 } from "firebase/firestore";
-import { db, useAuth } from "@nablis/shared/firebase";
+import { db } from '../../lib/firebase';
+import { useAuth } from '@nablis/shared/firebase';
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Avatar } from "../../components/Avatar";
 import { PrayerCard } from "../../components/PrayerCard";
+import { SidebarDrawer } from "../../components/SidebarDrawer";
 
 const C = {
   navy: "#1B2E6B", yellow: "#F5C518", light: "#EEF1F8",
@@ -30,13 +32,6 @@ const VERSE = {
   text: "\"The Lord is my shepherd; I shall not want. He makes me lie down in green pastures.\"",
   reference: "Psalm 23:1-2",
 };
-
-const MEMBER_MENU = [
-  { label: "Bible Study",  icon: "📖", route: "/bible-study" },
-  { label: "Testimonials", icon: "🙏", route: "/testimony"   },
-  { label: "Attendance",   icon: "✅", route: "/attendance"  },
-  { label: "Gallery",      icon: "🖼️", route: "/gallery"     },
-] as const;
 
 type PrayerStatus = "completed" | "upcoming" | "scheduled";
 
@@ -80,6 +75,7 @@ function AdminHome() {
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionId, setActionId]   = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   async function load() {
     try {
@@ -190,7 +186,10 @@ function AdminHome() {
       >
         {/* Top bar */}
         <View style={styles.topBar}>
-          <View>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => setSidebarOpen(true)}>
+            <Ionicons name="menu" size={22} color={C.navy} />
+          </TouchableOpacity>
+          <View style={styles.topCenter}>
             <Text style={styles.adminGreetLabel}>Admin Panel</Text>
             <Text style={styles.topTitle}>Nablis</Text>
           </View>
@@ -312,6 +311,7 @@ function AdminHome() {
 
         <View style={{ height: 24 }} />
       </ScrollView>
+      <SidebarDrawer visible={sidebarOpen} onClose={() => setSidebarOpen(false)} currentRoute="/(tabs)/home" />
     </View>
   );
 }
@@ -514,24 +514,7 @@ function MemberHome() {
         </View>
       </Modal>
 
-      {/* Side drawer modal */}
-      <Modal visible={menuVisible} transparent animationType="slide" onRequestClose={() => setMenuVisible(false)}>
-        <TouchableOpacity style={styles.drawerOverlay} activeOpacity={1} onPress={() => setMenuVisible(false)}>
-          <View style={styles.drawer}>
-            <Text style={styles.drawerLogo}>Nablis</Text>
-            {MEMBER_MENU.map((item) => (
-              <TouchableOpacity
-                key={item.route}
-                style={styles.drawerItem}
-                onPress={() => { setMenuVisible(false); router.push(item.route as any); }}
-              >
-                <Text style={styles.drawerItemIcon}>{item.icon}</Text>
-                <Text style={styles.drawerItemLabel}>{item.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      <SidebarDrawer visible={menuVisible} onClose={() => setMenuVisible(false)} currentRoute="/(tabs)/home" />
     </View>
   );
 }
@@ -549,6 +532,7 @@ const styles = StyleSheet.create({
   content:            { paddingHorizontal: 16 },
   topBar:             { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14 },
   iconBtn:            { width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
+  topCenter:          { flex: 1, alignItems: "center" },
   topTitle:           { fontSize: 18, fontWeight: "800", color: C.navy },
   adminGreetLabel:    { fontSize: 11, color: C.grey, fontWeight: "600" },
 
@@ -635,10 +619,4 @@ const styles = StyleSheet.create({
   reflModalQuote:     { fontSize: 16, fontStyle: "italic", color: C.navy, lineHeight: 26, marginBottom: 6 },
   reflModalVerse:     { fontSize: 12, color: C.grey, marginBottom: 16 },
   reflModalBody:      { fontSize: 14, color: C.dark, lineHeight: 24, paddingBottom: 16 },
-  drawerOverlay:      { flex: 1, backgroundColor: "rgba(0,0,0,0.5)" },
-  drawer:             { position: "absolute", left: 0, top: 0, bottom: 0, width: 280, backgroundColor: C.white, paddingTop: 60, paddingHorizontal: 16 },
-  drawerLogo:         { fontSize: 24, fontWeight: "800", color: C.navy, marginBottom: 32 },
-  drawerItem:         { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 8, marginBottom: 8 },
-  drawerItemIcon:     { fontSize: 20, marginRight: 12 },
-  drawerItemLabel:    { fontSize: 16, color: C.navy, fontWeight: "500" },
 });

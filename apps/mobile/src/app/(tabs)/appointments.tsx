@@ -8,11 +8,13 @@ import {
   collection, query, where, getDocs, addDoc, updateDoc, doc,
   serverTimestamp, Timestamp,
 } from "firebase/firestore";
-import { db, useAuth } from "@nablis/shared/firebase";
+import { db } from '../../lib/firebase';
+import { useAuth } from '@nablis/shared/firebase';
 import { Ionicons } from "@expo/vector-icons";
 import { AppointmentCard } from "../../components/AppointmentCard";
 import { BottomSheet } from "../../components/BottomSheet";
 import { Avatar } from "../../components/Avatar";
+import { SidebarDrawer } from "../../components/SidebarDrawer";
 
 const C = {
   navy: "#1B2E6B", yellow: "#F5C518", light: "#EEF1F8",
@@ -69,6 +71,7 @@ function AdminAppointments() {
   const [loading, setLoading]   = useState(true);
   const [tab, setTab]           = useState<AdminTab>("pending");
   const [actionId, setActionId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -115,6 +118,9 @@ function AdminAppointments() {
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity style={styles.hamburgerBtn} onPress={() => setSidebarOpen(true)}>
+          <Ionicons name="menu" size={22} color={C.navy} />
+        </TouchableOpacity>
         <View>
           <Text style={styles.title}>Admin</Text>
           <Text style={styles.titleBold}>All Appointments</Text>
@@ -206,6 +212,7 @@ function AdminAppointments() {
           <View style={{ height: 24 }} />
         </ScrollView>
       )}
+      <SidebarDrawer visible={sidebarOpen} onClose={() => setSidebarOpen(false)} currentRoute="/(tabs)/appointments" />
     </View>
   );
 }
@@ -218,6 +225,7 @@ function MemberAppointments() {
   const [appointments, setApts]     = useState<AppointmentDoc[]>([]);
   const [loading, setLoading]       = useState(true);
   const [showBook, setShowBook]     = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [service,    setService]    = useState(SERVICE_TYPES[0]);
   const [dateStr,    setDateStr]    = useState("");
@@ -295,6 +303,9 @@ function MemberAppointments() {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.header}>
+        <TouchableOpacity style={styles.hamburgerBtn} onPress={() => setSidebarOpen(true)}>
+          <Ionicons name="menu" size={22} color={C.navy} />
+        </TouchableOpacity>
         <View>
           <Text style={styles.title}>My Spiritual</Text>
           <Text style={styles.titleBold}>Appointments</Text>
@@ -351,6 +362,7 @@ function MemberAppointments() {
         </ScrollView>
       )}
 
+      <SidebarDrawer visible={sidebarOpen} onClose={() => setSidebarOpen(false)} currentRoute="/(tabs)/appointments" />
       <BottomSheet visible={showBook} onClose={() => setShowBook(false)} height={560}>
         <Text style={styles.sheetTitle}>Book New Session</Text>
         <Text style={styles.sheetSub}>Schedule a spiritual appointment</Text>
@@ -420,7 +432,8 @@ export default function AppointmentsScreen() {
 
 const styles = StyleSheet.create({
   root:           { flex: 1, backgroundColor: "#F9FAFB" },
-  header:         { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 16 },
+  header:         { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 16, gap: 10 },
+  hamburgerBtn:   { width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
   title:          { fontSize: 14, color: C.grey, fontWeight: "500" },
   titleBold:      { fontSize: 20, fontWeight: "800", color: C.navy },
   bookBtn:        { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.yellow, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 },
