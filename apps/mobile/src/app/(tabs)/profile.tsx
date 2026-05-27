@@ -11,7 +11,8 @@ import {
   reauthenticateWithCredential,
   updatePassword,
 } from "firebase/auth";
-import { db, useAuth } from "@nablis/shared/firebase";
+import { auth, db } from '../../lib/firebase';
+import { useAuth } from '@nablis/shared/firebase';
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -66,12 +67,11 @@ function useSignOut() {
   const router = useRouter();
   return async () => {
     try {
-      const { signOut } = await import("firebase/auth");
-      const { auth }    = await import("@nablis/shared/firebase");
+      const { signOut } = require("firebase/auth");
       await signOut(auth);
-      router.replace("/(auth)/login");
-    } catch (err: unknown) {
-      console.error("Sign out error:", err);
+      router.replace("/(auth)/login" as any);
+    } catch (err: any) {
+      Alert.alert("Error", err.message ?? "Sign out failed.");
     }
   };
 }
@@ -431,9 +431,12 @@ function AdminProfile({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
       { icon: "heart-outline",             label: "Testimonials",        route: "/testimony"           },
       { icon: "checkmark-circle-outline",  label: "Attendance",          route: "/attendance"          },
       { icon: "images-outline",            label: "Gallery",             route: "/gallery"             },
+      { icon: "calendar-clear-outline",    label: "Events",              route: "/events"              },
+      { icon: "newspaper-outline",         label: "Blogs",               route: "/blogs"               },
+      { icon: "book-outline",              label: "Daily Prayers",       route: "/daily-prayers"       },
     ],
     [
-      { icon: "notifications-outline", label: "Notifications" },
+      { icon: "notifications-outline", label: "Notifications", route: "/notifications" },
       { icon: "contrast-outline",      label: "Appearance"    },
     ],
     [
@@ -541,15 +544,18 @@ function MemberProfile() {
   const MENU_GROUPS: MenuItemType[][] = [
     [
       { icon: "calendar-outline",         label: "My Appointments",  route: "/(tabs)/appointments" },
-      { icon: "book-outline",             label: "Bible Study",      route: "/bible-study"  },
-      { icon: "heart-outline",            label: "Testimonials",     route: "/testimony"    },
-      { icon: "images-outline",           label: "Gallery",          route: "/gallery"      },
-      { icon: "checkmark-circle-outline", label: "Attendance",       route: "/attendance"   },
+      { icon: "book-outline",             label: "Bible Study",      route: "/bible-study"         },
+      { icon: "heart-outline",            label: "Testimonials",     route: "/testimony"           },
+      { icon: "images-outline",           label: "Gallery",          route: "/gallery"             },
+      { icon: "checkmark-circle-outline", label: "Attendance",       route: "/attendance"          },
+      { icon: "calendar-clear-outline",   label: "Events",           route: "/events"              },
+      { icon: "newspaper-outline",        label: "Blogs",            route: "/blogs"               },
+      { icon: "book-outline",             label: "Daily Prayers",    route: "/daily-prayers"       },
     ],
     [
-      { icon: "person-outline",         label: "Edit Profile",      onPress: () => setShowEditProfile(true) },
+      { icon: "person-outline",         label: "Edit Profile",      onPress: () => setShowEditProfile(true)    },
       { icon: "shield-outline",         label: "Change Password",   onPress: () => setShowChangePassword(true) },
-      { icon: "notifications-outline",  label: "Notifications" },
+      { icon: "notifications-outline",  label: "Notifications",     route: "/notifications"                    },
       { icon: "language-outline",       label: "Language"      },
       { icon: "contrast-outline",       label: "Appearance"    },
     ],

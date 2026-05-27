@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '@nablis/shared/firebase';
+import { auth, db } from '../../lib/firebase';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -145,7 +145,7 @@ export default function RegisterScreen() {
           <Ionicons name="arrow-back" size={20} color={C.navy} />
         </TouchableOpacity>
 
-        <Text style={styles.logo}>Nablis</Text>
+        <Image source={require('../../../assets/Logo-Blue.png')} style={styles.logo} />
         <Text style={styles.title}>Join Nablis Ministry</Text>
         <Text style={styles.subtitle}>
           Fill out your profile to request membership.{'\n'}
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
   scroll:         { flex: 1 },
   content:        { paddingHorizontal: 24, alignItems: 'center' },
   backBtn:        { alignSelf: 'flex-start', width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border, marginBottom: 16 },
-  logo:           { fontSize: 42, marginBottom: 8 },
+  logo:           { width: 90, height: 90, resizeMode: 'contain', marginBottom: 8 },
   title:          { fontSize: 24, fontWeight: '800', color: C.navy, marginBottom: 6, textAlign: 'center' },
   subtitle:       { fontSize: 13, color: C.grey, marginBottom: 28, textAlign: 'center', lineHeight: 20 },
   section:        { width: '100%', maxWidth: 420, marginBottom: 20 },

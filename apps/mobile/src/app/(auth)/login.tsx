@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { signInWithEmailAndPassword, getAuth } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { app, db } from '@nablis/shared/firebase';
-
-const auth = getAuth(app);
+import { auth, db } from '../../lib/firebase';
 import { useRouter } from 'expo-router';
 
 const C = {
@@ -29,14 +27,18 @@ export default function LoginScreen() {
       Alert.alert('Error', 'Please enter your email and password.');
       return;
     }
+    console.log('Config check:', {
+      apiKey:    process.env.EXPO_PUBLIC_FIREBASE_API_KEY    ? 'SET' : 'MISSING',
+      projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ? 'SET' : 'MISSING',
+    });
     setLoading(true);
     try {
       const cred = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
 
-      // Check for rejected status immediately so we can show a clear message
       const snap = await getDoc(doc(db, 'users', cred.user.uid));
-      if (snap.exists() && snap.data().status === 'rejected') {
-        // Sign out and inform
+      const status = snap.exists() ? snap.data().status : null;
+
+      if (status === 'rejected') {
         const { signOut } = await import('firebase/auth');
         await signOut(auth);
         Alert.alert(
@@ -45,7 +47,13 @@ export default function LoginScreen() {
         );
         return;
       }
-      // Auth guard in _layout.tsx handles all other routing (pending → /pending, active → /home)
+
+      if (status === 'pending') {
+        router.replace('/(auth)/pending' as any);
+        return;
+      }
+
+      router.replace('/(tabs)/home' as any);
     } catch (error: any) {
       const msg =
         error.code === 'auth/invalid-credential' ||
@@ -65,7 +73,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={[styles.inner, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
-        <Text style={styles.logo}>Nablis</Text>
+        <Image source={require('../../../assets/Logo-Blue.png')} style={styles.logo} />
         <Text style={styles.title}>Nablis Ministry</Text>
         <Text style={styles.subtitle}>Sign in to your account</Text>
 
@@ -123,7 +131,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   root:           { flex: 1, backgroundColor: C.bg },
   inner:          { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
-  logo:           { fontSize: 52, marginBottom: 8 },
+  logo:           { width: 100, height: 100, resizeMode: 'contain', marginBottom: 8 },
   title:          { fontSize: 28, fontWeight: '800', color: C.navy, marginBottom: 4 },
   subtitle:       { fontSize: 15, color: C.grey, marginBottom: 32 },
   input:          { width: '100%', maxWidth: 400, backgroundColor: C.white, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 13, marginBottom: 12, fontSize: 15, borderWidth: 1, borderColor: C.border, color: C.dark },
