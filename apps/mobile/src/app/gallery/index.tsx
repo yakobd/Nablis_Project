@@ -5,7 +5,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { collection, query, orderBy, getDocs } from "firebase/firestore";
-import { db, useAuth } from "@nablis/shared/firebase";
+import { db } from '../../lib/firebase';
+import { useAuth } from '@nablis/shared/firebase';
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
@@ -43,8 +44,14 @@ export default function GalleryScreen() {
   const [lightbox, setLightbox] = useState<GalleryItem | null>(null);
 
   useEffect(() => {
+    const { auth: fbAuth } = require('../../lib/firebase');
+    console.log('[Gallery] current user:', fbAuth.currentUser?.uid ?? 'not signed in');
     getDocs(query(collection(db, "gallery"), orderBy("createdAt", "desc")))
-      .then((snap) => setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() } as GalleryItem))))
+      .then((snap) => {
+        console.log('[Gallery] docs found:', snap.size);
+        setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() } as GalleryItem)));
+      })
+      .catch((e) => console.error('[Gallery] fetch error:', e))
       .finally(() => setLoading(false));
   }, []);
 

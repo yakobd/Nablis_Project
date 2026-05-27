@@ -2,8 +2,8 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { db } from '../../lib/firebase';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { auth, db } from '../../lib/firebase';
+import { collection, getDocs, query, Timestamp } from 'firebase/firestore';
 
 export default function EventsScreen() {
   const router  = useRouter();
@@ -11,13 +11,31 @@ export default function EventsScreen() {
   const [events,  setEvents]  = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  function fmtDate(val: any): string {
+    if (!val) return '';
+    if (val instanceof Timestamp) return val.toDate().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    if (typeof val === 'string') return val;
+    if (val?.toDate) return val.toDate().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    return String(val);
+  }
+
   useEffect(() => {
     (async () => {
+      const user = auth.currentUser;
+      console.log('[Events] current user:', user?.uid ?? 'not signed in');
       try {
-        const snap = await getDocs(query(collection(db, 'events'), orderBy('date', 'desc')));
-        setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        // No orderBy to avoid composite index requirement; sort client-side
+        const snap = await getDocs(query(collection(db, 'events')));
+        console.log('[Events] docs found:', snap.size);
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        data.sort((a: any, b: any) => {
+          const aT = a.date instanceof Timestamp ? a.date.seconds : (a.date?.seconds ?? 0);
+          const bT = b.date instanceof Timestamp ? b.date.seconds : (b.date?.seconds ?? 0);
+          return bT - aT;
+        });
+        setEvents(data);
       } catch (e) {
-        console.error(e);
+        console.error('[Events] fetch error:', e);
       } finally {
         setLoading(false);
       }
@@ -43,7 +61,7 @@ export default function EventsScreen() {
         events.map(event => (
           <View key={event.id} style={styles.card}>
             <Text style={styles.cardTitle}>{event.title}</Text>
-            {event.date        && <Text style={styles.cardMeta}>📅  {event.date}</Text>}
+            {event.date        && <Text style={styles.cardMeta}>📅  {fmtDate(event.date)}</Text>}
             {event.location    && <Text style={styles.cardMeta}>📍  {event.location}</Text>}
             {event.description && <Text style={styles.cardDesc} numberOfLines={2}>{event.description}</Text>}
             <TouchableOpacity style={styles.rsvpBtn}>

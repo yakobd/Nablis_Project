@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  RefreshControl, ActivityIndicator, Alert,
+  RefreshControl, ActivityIndicator, Alert, Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -333,29 +333,39 @@ function MemberHome() {
   async function loadData() {
     if (!user) return;
     try {
-      const todaySnap = await getDocs(query(
+      console.log('[Home] loading prayer data for user:', user.id);
+      // Single query avoids the composite index required by (userId + date range)
+      const allSnap = await getDocs(query(
         collection(db, "prayerLogs"),
         where("userId", "==", user.id),
-        where("date", ">=", Timestamp.fromDate(todayStart())),
-        where("date", "<=", Timestamp.fromDate(todayEnd()))
       ));
-      setPrayedToday(new Set(todaySnap.docs.map((d) => d.data().prayerType as string)));
-
-      const allSnap = await getDocs(query(collection(db, "prayerLogs"), where("userId", "==", user.id)));
+      console.log('[Home] prayerLogs fetched:', allSnap.size);
       setTotalPrayers(allSnap.size);
 
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+
       const daySet = new Set<string>();
+      const todayPrayers = new Set<string>();
       allSnap.docs.forEach((d) => {
         const ts = d.data().date as Timestamp | undefined;
-        if (ts) daySet.add(ts.toDate().toDateString());
+        if (!ts) return;
+        const dt = ts.toDate();
+        daySet.add(dt.toDateString());
+        if (dt >= today && dt < tomorrow) {
+          todayPrayers.add(d.data().prayerType as string);
+        }
       });
+      setPrayedToday(todayPrayers);
       setPrayedDays(daySet);
 
       let s = 0;
       const check = new Date();
       while (daySet.has(check.toDateString())) { s++; check.setDate(check.getDate() - 1); }
       setStreak(s);
-    } catch (_) {}
+    } catch (err) {
+      console.error('[Home] prayerLogs fetch error:', err);
+    }
   }
 
   useEffect(() => { loadData(); }, [user]);

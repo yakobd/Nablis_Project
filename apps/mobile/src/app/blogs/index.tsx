@@ -2,7 +2,7 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { db } from '../../lib/firebase';
+import { auth, db } from '../../lib/firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 
 export default function BlogsScreen() {
@@ -13,14 +13,17 @@ export default function BlogsScreen() {
 
   useEffect(() => {
     (async () => {
+      const user = auth.currentUser;
+      console.log('[Blogs] current user:', user?.uid ?? 'not signed in');
       try {
         const q    = query(collection(db, 'blogPosts'), where('status', '==', 'published'));
         const snap = await getDocs(q);
+        console.log('[Blogs] docs found:', snap.size);
         const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
         setBlogs(data);
       } catch (e) {
-        console.error(e);
+        console.error('[Blogs] fetch error:', e);
       } finally {
         setLoading(false);
       }
