@@ -8,7 +8,8 @@ import {
   collection, query, orderBy, getDocs, addDoc, updateDoc, doc,
   serverTimestamp, Timestamp,
 } from "firebase/firestore";
-import { db, useAuth } from "@nablis/shared/firebase";
+import { db } from '../../lib/firebase';
+import { useAuth } from '@nablis/shared/firebase';
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Avatar } from "../../components/Avatar";
@@ -93,7 +94,7 @@ function AdminTestimonies() {
   async function load() {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, "testimonials"), orderBy("createdAt", "desc")));
+      const snap = await getDocs(query(collection(db, "testimonies"), orderBy("createdAt", "desc")));
       setAll(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony)));
     } finally {
       setLoading(false);
@@ -109,7 +110,7 @@ function AdminTestimonies() {
   async function handleAction(id: string, status: "published" | "rejected") {
     setActionId(id);
     try {
-      await updateDoc(doc(db, "testimonials", id), { status });
+      await updateDoc(doc(db, "testimonies", id), { status });
       Alert.alert("Done", status === "published" ? "Testimony published." : "Testimony rejected.");
       await load();
     } catch {
@@ -252,7 +253,7 @@ function MemberTestimonies() {
   async function load() {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, "testimonials"), orderBy("createdAt", "desc")));
+      const snap = await getDocs(query(collection(db, "testimonies"), orderBy("createdAt", "desc")));
       setAll(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony)));
     } finally {
       setLoading(false);
@@ -267,7 +268,7 @@ function MemberTestimonies() {
     if (!user || !formTitle.trim() || !formContent.trim()) return;
     setSubmitting(true);
     try {
-      await addDoc(collection(db, "testimonials"), {
+      await addDoc(collection(db, "testimonies"), {
         authorId:   user.id,
         authorName: user.displayName || user.email,
         title:      formTitle.trim(),

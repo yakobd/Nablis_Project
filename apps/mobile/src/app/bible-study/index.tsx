@@ -4,8 +4,9 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { collection, query, orderBy, getDocs, doc, updateDoc, arrayUnion, Timestamp } from "firebase/firestore";
-import { db, useAuth } from "@nablis/shared/firebase";
+import { collection, query, getDocs, doc, updateDoc, arrayUnion, Timestamp } from "firebase/firestore";
+import { db } from '../../lib/firebase';
+import { useAuth } from '@nablis/shared/firebase';
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
@@ -73,14 +74,14 @@ export default function BibleStudyScreen() {
   const [joiningId, setJoiningId] = useState<string | null>(null);
 
   useEffect(() => {
-    getDocs(query(collection(db, "bibleStudies"), orderBy("createdAt", "desc")))
+    getDocs(query(collection(db, "bibleStudies")))
       .then((snap) => {
         setStudies(snap.docs.map((d) => {
           const data = d.data();
           return {
             id:          d.id,
             title:       data.title ?? "",
-            teacherName: data.teacherName ?? "",
+            teacherName: data.teacher ?? data.teacherName ?? "",
             memberCount: data.members?.length ?? 0,
             fileCount:   data.materials?.length ?? 0,
             startDate:   data.startDate,

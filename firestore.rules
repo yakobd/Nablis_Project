@@ -95,7 +95,7 @@ service cloud.firestore {
     }
 
     // TESTIMONIALS
-    match /testimonials/{doc} {
+    match /testimonies/{doc} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
       allow update: if isAdmin();
@@ -103,7 +103,7 @@ service cloud.firestore {
     }
 
     // BIBLE STUDY
-    match /bibleStudy/{doc} {
+    match /bibleStudies/{doc} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
