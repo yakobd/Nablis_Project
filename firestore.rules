@@ -2,223 +2,130 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── helpers ────────────────────────────────────────────────────────────────
-    function authed() {
+    // Helper functions
+    function isAuthenticated() {
       return request.auth != null;
     }
 
-    function userDoc() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    function isAdmin() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin'];
     }
 
     function isSuperAdmin() {
-      return authed() && userDoc().role == 'super_admin';
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
     }
 
-    // isAdmin() covers both admin and super_admin roles
-    function isAdmin() {
-      return authed()
-          && (userDoc().role == 'admin' || userDoc().role == 'super_admin');
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isActiveMember() {
-      return authed()
-          && userDoc().role == 'member'
-          && userDoc().status == 'active';
-    }
-
-    function isActiveUser() {
-      return authed() && userDoc().status == 'active';
-    }
-
-    function isOwner(uid) {
-      return authed() && request.auth.uid == uid;
-    }
-
-    function onlyChanges(keys) {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
-    }
-
-    // ── /users/{uid} ───────────────────────────────────────────────────────────
-    match /users/{uid} {
-      // Users read their own profile; admins see all
-      allow read: if isOwner(uid) || isAdmin();
-
-      // New sign-ups create their own doc with role='member' and status='pending'
-      allow create: if isOwner(uid)
-                    && request.resource.data.role == 'member'
-                    && request.resource.data.status == 'pending';
-
-      // Super admin can update any field (role, status).
-      // Regular admin can update anything except role.
-      // Members can update their own non-privileged fields.
-      allow update: if isSuperAdmin()
-                    || (isAdmin() && !onlyChanges(['role']))
-                    || (isOwner(uid) && !request.resource.data.diff(resource.data)
-                          .affectedKeys().hasAny(['role', 'status']));
-
+    // USERS
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isOwner(userId) || isAdmin();
       allow delete: if isSuperAdmin();
     }
 
-    // ── /appointments/{id} ────────────────────────────────────────────────────
-    match /appointments/{id} {
-      allow read: if isAdmin()
-                  || (isActiveUser() && resource.data.userId == request.auth.uid)
-                  || (isActiveUser() && resource.data.memberId == request.auth.uid);
-      allow create: if isActiveUser()
-                    && (request.resource.data.userId == request.auth.uid
-                        || request.resource.data.memberId == request.auth.uid)
-                    && request.resource.data.status == 'pending';
-      allow update, delete: if isAdmin();
+    // APPOINTMENTS
+    match /appointments/{doc} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
-    // ── /dailyPrayers/{id} ────────────────────────────────────────────────────
-    match /dailyPrayers/{id} {
-      allow read:  if authed();
+    // DAILY PRAYERS
+    match /dailyPrayers/{doc} {
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
-    // ── /prayerLogs/{id} ──────────────────────────────────────────────────────
-    match /prayerLogs/{id} {
-      allow read: if request.auth != null
-                  && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if request.auth != null
-                    && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAdmin();
+    // PRAYER LOGS
+    match /prayerLogs/{doc} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
-    // ── /attendance/{id} ──────────────────────────────────────────────────────
-    match /attendance/{id} {
-      allow read:  if authed();
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin()
-                    || (isActiveUser() && onlyChanges(['attendees']));
-    }
-
-    // ── /checkIns/{id} ────────────────────────────────────────────────────────
-    match /checkIns/{id} {
-      allow read: if isAdmin()
-                  || (authed() && resource.data.userId == request.auth.uid);
-      allow create: if isActiveUser()
-                    && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAdmin();
-    }
-
-    // ── /blogPosts/{id} ───────────────────────────────────────────────────────
-    match /blogPosts/{id} {
-      allow read:  if request.auth != null;
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin()
-                    || (isActiveUser() && onlyChanges(['comments']));
-    }
-
-    // ── /events/{id} ──────────────────────────────────────────────────────────
-    match /events/{id} {
-      allow read:   if request.auth != null;
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin()
-                    || (isActiveUser() && onlyChanges(['rsvps']));
-    }
-
-    // ── /gallery/{id} ─────────────────────────────────────────────────────────
-    match /gallery/{id} {
-      allow read:  if request.auth != null;
+    // ATTENDANCE
+    match /attendance/{doc} {
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
-    // ── /conversations/{id} ───────────────────────────────────────────────────
-    match /conversations/{id} {
-      allow read: if isAdmin()
-                  || (isActiveUser() && resource.data.memberId == request.auth.uid);
-      allow create: if isActiveUser()
-                    && request.resource.data.memberId == request.auth.uid;
-      allow update: if isAdmin()
-                    || (isActiveUser() && resource.data.memberId == request.auth.uid);
-      allow delete: if isAdmin();
-
-      // Sub-collection: messages within a conversation
-      match /messages/{msgId} {
-        allow read: if isAdmin()
-                    || (isActiveUser()
-                        && get(/databases/$(database)/documents/conversations/$(id)).data.memberId == request.auth.uid);
-        allow create: if isActiveUser() || isAdmin();
-        allow update, delete: if isAdmin();
-      }
-    }
-
-    // ── /messages/{id} ────────────────────────────────────────────────────────
-    match /messages/{id} {
-      allow read: if isAdmin()
-                  || (isActiveUser()
-                      && (resource.data.senderId == request.auth.uid
-                          || resource.data.receiverId == request.auth.uid));
-      allow create: if isActiveUser()
-                    && request.resource.data.senderId == request.auth.uid;
-      allow update: if isAdmin()
-                    || (authed()
-                        && resource.data.receiverId == request.auth.uid
-                        && onlyChanges(['read']));
+    // CHECK INS
+    match /checkIns/{doc} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
-    // ── /testimonials/{id} ────────────────────────────────────────────────────
-    match /testimonials/{id} {
-      allow read: if resource.data.status == 'published'
-                  || isAdmin()
-                  || (authed() && resource.data.authorId == request.auth.uid);
-      allow create: if isActiveUser()
-                    && request.resource.data.authorId == request.auth.uid
-                    && request.resource.data.status == 'pending';
-      allow update: if isAdmin()
-                    || (isOwner(resource.data.authorId)
-                        && resource.data.status == 'pending'
-                        && !request.resource.data.diff(resource.data)
-                              .affectedKeys().hasAny(['status', 'likes']));
+    // BLOG POSTS
+    match /blogPosts/{doc} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // EVENTS
+    match /events/{doc} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // GALLERY
+    match /gallery/{doc} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // MESSAGES / CONVERSATIONS
+    match /conversations/{doc} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /conversations/{convId}/messages/{msgId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // TESTIMONIALS
+    match /testimonials/{doc} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
-    // ── /testimonies/{id} ─────────────────────────────────────────────────────
-    match /testimonies/{id} {
-      allow read: if resource.data.status == 'published'
-                  || isAdmin()
-                  || (authed() && resource.data.authorId == request.auth.uid);
-      allow create: if isActiveUser()
-                    && request.resource.data.authorId == request.auth.uid
-                    && request.resource.data.status == 'pending';
-      allow update: if isAdmin()
-                    || (isOwner(resource.data.authorId)
-                        && resource.data.status == 'pending'
-                        && !request.resource.data.diff(resource.data)
-                              .affectedKeys().hasAny(['status', 'likes']));
+    // BIBLE STUDY
+    match /bibleStudy/{doc} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // NOTIFICATIONS
+    match /notifications/{doc} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
       allow delete: if isAdmin();
     }
 
-    // ── /bibleStudies/{id} ────────────────────────────────────────────────────
-    match /bibleStudies/{id} {
-      allow read:  if authed();
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin()
-                    || (isActiveUser() && onlyChanges(['members']));
+    // CHALLENGES
+    match /challenges/{doc} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
-    // ── /notifications/{id} ───────────────────────────────────────────────────
-    match /notifications/{id} {
-      allow read: if request.auth != null
-                  && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isAdmin();
-      allow update: if isAdmin()
-                    || (request.auth != null
-                        && resource.data.userId == request.auth.uid
-                        && onlyChanges(['read']));
-      allow delete: if isAdmin();
-    }
-
-    // ── /challenges/{id} ──────────────────────────────────────────────────────
-    match /challenges/{id} {
-      allow read:   if authed();
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin()
-                    || (isActiveUser() && onlyChanges(['participants']));
+    // CONTACT MESSAGES
+    match /messages/{doc} {
+      allow read: if isAdmin();
+      allow create: if true;
     }
   }
 }
