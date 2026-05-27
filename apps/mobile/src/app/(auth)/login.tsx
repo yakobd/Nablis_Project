@@ -4,9 +4,11 @@ import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, getAuth } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '@nablis/shared/firebase';
+import { app, db } from '@nablis/shared/firebase';
+
+const auth = getAuth(app);
 import { useRouter } from 'expo-router';
 
 const C = {

@@ -7,7 +7,8 @@ import {
   type User as FirebaseUser,
 } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from './config';
+import { auth } from './auth-native';
+import { db } from './config';
 
 export async function signInWithEmail(email: string, password: string) {
   return signInWithEmailAndPassword(auth, email, password);

@@ -1,8 +1,8 @@
-'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from '../config';
+import { auth } from '../auth-native';
+import { db } from '../config';
 import { signInWithEmail, signOut as fbSignOut } from '../auth';
 import type { User } from '../types';
 
