@@ -428,14 +428,7 @@ function AdminProfile({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
 
   const MENU_GROUPS: MenuItemType[][] = [
     [
-      { icon: "people-outline",            label: "Member Management",   route: "/attendance"          },
-      { icon: "calendar-outline",          label: "All Appointments",    route: "/(tabs)/appointments" },
-      { icon: "heart-outline",             label: "Testimonials",        route: "/testimony"           },
-      { icon: "checkmark-circle-outline",  label: "Attendance",          route: "/attendance"          },
-      { icon: "images-outline",            label: "Gallery",             route: "/gallery"             },
-      { icon: "calendar-clear-outline",    label: "Events",              route: "/events"              },
-      { icon: "newspaper-outline",         label: "Blogs",               route: "/blogs"               },
-      { icon: "book-outline",              label: "Daily Prayers",       route: "/daily-prayers"       },
+      { icon: "calendar-outline", label: "All Appointments", route: "/(tabs)/appointments" },
     ],
     [
       { icon: "notifications-outline", label: "Notifications", route: "/notifications" },
@@ -555,21 +548,12 @@ function MemberProfile() {
 
   const MENU_GROUPS: MenuItemType[][] = [
     [
-      { icon: "calendar-outline",         label: "My Appointments",  route: "/(tabs)/appointments" },
-      { icon: "book-outline",             label: "Bible Study",      route: "/bible-study"         },
-      { icon: "heart-outline",            label: "Testimonials",     route: "/testimony"           },
-      { icon: "images-outline",           label: "Gallery",          route: "/gallery"             },
-      { icon: "checkmark-circle-outline", label: "Attendance",       route: "/attendance"          },
-      { icon: "calendar-clear-outline",   label: "Events",           route: "/events"              },
-      { icon: "newspaper-outline",        label: "Blogs",            route: "/blogs"               },
-      { icon: "book-outline",             label: "Daily Prayers",    route: "/daily-prayers"       },
+      { icon: "person-outline",        label: "Edit Profile",    onPress: () => setShowEditProfile(true)    },
+      { icon: "shield-outline",        label: "Change Password", onPress: () => setShowChangePassword(true) },
     ],
     [
-      { icon: "person-outline",         label: "Edit Profile",      onPress: () => setShowEditProfile(true)    },
-      { icon: "shield-outline",         label: "Change Password",   onPress: () => setShowChangePassword(true) },
-      { icon: "notifications-outline",  label: "Notifications",     route: "/notifications"                    },
-      { icon: "language-outline",       label: "Language"      },
-      { icon: "contrast-outline",       label: "Appearance"    },
+      { icon: "notifications-outline", label: "Notifications",  route: "/notifications" },
+      { icon: "contrast-outline",      label: "Appearance"      },
     ],
     [
       { icon: "log-out-outline", label: "Sign Out", onPress: handleSignOut, color: C.red },
@@ -684,6 +668,7 @@ const styles = StyleSheet.create({
   root:          { flex: 1, backgroundColor: C.bg },
   topBar:        { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.bg },
   hamburgerBtn:  { width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
+  hamburgerIcon: { fontSize: 22, color: C.navy, lineHeight: 26 },
   topBarTitle:   { fontSize: 17, fontWeight: "800", color: C.navy },
   content:       { paddingHorizontal: 16, paddingTop: 16 },
   profileHeader: { alignItems: "center", marginBottom: 20 },

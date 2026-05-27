@@ -376,6 +376,7 @@ const styles = StyleSheet.create({
   // Admin inbox
   inboxHeader:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 16, backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: C.border, gap: 10 },
   hamburgerBtn:  { width: 36, height: 36, borderRadius: 10, backgroundColor: C.light, alignItems: "center", justifyContent: "center" },
+  hamburgerIcon: { fontSize: 20, color: C.navy, lineHeight: 24 },
   inboxTitle:    { flex: 1, fontSize: 20, fontWeight: "800", color: C.navy },
   refreshBtn:    { width: 36, height: 36, borderRadius: 10, backgroundColor: C.light, alignItems: "center", justifyContent: "center" },
   convoRow:      { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border, backgroundColor: C.white },

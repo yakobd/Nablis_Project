@@ -532,6 +532,7 @@ const styles = StyleSheet.create({
   content:            { paddingHorizontal: 16 },
   topBar:             { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14 },
   iconBtn:            { width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
+  hamburgerIcon:      { fontSize: 22, color: C.navy, lineHeight: 26 },
   topCenter:          { flex: 1, alignItems: "center" },
   topTitle:           { fontSize: 18, fontWeight: "800", color: C.navy },
   adminGreetLabel:    { fontSize: 11, color: C.grey, fontWeight: "600" },

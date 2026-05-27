@@ -434,6 +434,7 @@ const styles = StyleSheet.create({
   root:           { flex: 1, backgroundColor: "#F9FAFB" },
   header:         { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 16, gap: 10 },
   hamburgerBtn:   { width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
+  hamburgerIcon:  { fontSize: 22, color: C.navy, lineHeight: 26 },
   title:          { fontSize: 14, color: C.grey, fontWeight: "500" },
   titleBold:      { fontSize: 20, fontWeight: "800", color: C.navy },
   bookBtn:        { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.yellow, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 },
