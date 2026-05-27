@@ -1,3 +1,4 @@
+'use client';
 import { useState, useEffect } from 'react';
 import { type User as FirebaseUser } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
