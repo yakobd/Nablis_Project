@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import {
-  collection, query, where, orderBy, getDocs,
+  collection, query, where, getDocs,
   doc, updateDoc, addDoc, deleteDoc, serverTimestamp,
 } from "firebase/firestore";
 import { db, useAuth } from "@/lib/firebase";
@@ -184,11 +184,14 @@ function AdminTestimonials() {
       setLoading(true);
       try {
         const [pSnap, pubSnap] = await Promise.all([
-          getDocs(query(collection(db, "testimonies"), where("status", "==", "pending"),   orderBy("createdAt", "desc"))),
-          getDocs(query(collection(db, "testimonies"), where("status", "==", "published"), orderBy("createdAt", "desc"))),
+          getDocs(query(collection(db, "testimonies"), where("status", "==", "pending"))),
+          getDocs(query(collection(db, "testimonies"), where("status", "==", "published"))),
         ]);
-        setPending(pSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony)));
-        setPublished(pubSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony)));
+        const sortTs = (a: Testimony, b: Testimony) =>
+          (((b.createdAt as unknown as { seconds?: number })?.seconds) ?? 0) -
+          (((a.createdAt as unknown as { seconds?: number })?.seconds) ?? 0);
+        setPending(pSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony)).sort(sortTs));
+        setPublished(pubSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony)).sort(sortTs));
       } finally {
         setLoading(false);
       }
@@ -353,8 +356,15 @@ function MemberTestimonials() {
 
   useEffect(() => {
     if (!user) return;
-    getDocs(query(collection(db, "testimonies"), where("status", "==", "published"), orderBy("createdAt", "desc")))
-      .then((snap) => setPublished(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony))))
+    getDocs(query(collection(db, "testimonies"), where("status", "==", "published")))
+      .then((snap) => {
+        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony));
+        data.sort((a, b) =>
+          (((b.createdAt as unknown as { seconds?: number })?.seconds) ?? 0) -
+          (((a.createdAt as unknown as { seconds?: number })?.seconds) ?? 0));
+        setPublished(data);
+      })
+      .catch(() => setPublished([]))
       .finally(() => setLoading(false));
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
