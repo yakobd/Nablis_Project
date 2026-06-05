@@ -2,7 +2,7 @@ import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { doc, updateDoc } from "firebase/firestore";
-import { db } from "@nablis/shared/firebase";
+import { db } from './lib/firebase';
 
 // Configure how notifications appear when the app is in the foreground
 Notifications.setNotificationHandler({

@@ -7,7 +7,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   collection, query, orderBy, getDocs, addDoc, serverTimestamp, Timestamp, where,
 } from "firebase/firestore";
-import { db, useAuth } from "@nablis/shared/firebase";
+import { db } from '../../lib/firebase';
+import { useAuth } from '@nablis/shared/firebase';
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Avatar } from "../../components/Avatar";
