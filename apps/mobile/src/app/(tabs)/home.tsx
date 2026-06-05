@@ -83,9 +83,9 @@ function AdminHome() {
         getDocs(query(collection(db, "users"), where("role", "==", "member"))),
         getDocs(query(collection(db, "appointments"), where("status", "==", "pending"))),
         getDocs(query(collection(db, "prayerLogs"),
-          where("date", ">=", Timestamp.fromDate(todayStart())),
-          where("date", "<=", Timestamp.fromDate(todayEnd())))),
-        getDocs(query(collection(db, "testimonials"), where("status", "==", "pending"))),
+          where("prayedAt", ">=", Timestamp.fromDate(todayStart())),
+          where("prayedAt", "<=", Timestamp.fromDate(todayEnd())))),
+        getDocs(query(collection(db, "testimonies"), where("status", "==", "pending"))),
         getDocs(query(collection(db, "users"), where("status", "==", "pending"))),
       ]);
       setStats({
@@ -284,7 +284,7 @@ function AdminHome() {
             pendingApts.map((a) => (
               <View key={a.id} style={styles.adminAptCard}>
                 <View style={styles.adminAptLeft}>
-                  <Text style={styles.adminAptName}>{a.userName || "Member"}</Text>
+                  <Text style={styles.adminAptName}>{a.memberName || a.userName || "Member"}</Text>
                   <Text style={styles.adminAptType}>{a.serviceType}</Text>
                   {a.date && <Text style={styles.adminAptDate}>{fmtDate(a.date as Timestamp)}</Text>}
                 </View>
@@ -348,7 +348,7 @@ function MemberHome() {
       const daySet = new Set<string>();
       const todayPrayers = new Set<string>();
       allSnap.docs.forEach((d) => {
-        const ts = d.data().date as Timestamp | undefined;
+        const ts = (d.data().prayedAt ?? d.data().date) as Timestamp | undefined;
         if (!ts) return;
         const dt = ts.toDate();
         daySet.add(dt.toDateString());
@@ -382,7 +382,7 @@ function MemberHome() {
     try {
       await addDoc(collection(db, "prayerLogs"), {
         userId: user.id, prayerType: prayerKey,
-        date: serverTimestamp(), createdAt: serverTimestamp(),
+        prayedAt: serverTimestamp(), createdAt: serverTimestamp(),
       });
       setPrayedToday((prev) => new Set([...prev, prayerKey]));
       setTotalPrayers((p) => p + 1);

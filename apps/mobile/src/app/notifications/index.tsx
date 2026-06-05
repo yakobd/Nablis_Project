@@ -78,7 +78,7 @@ export default function NotificationsScreen() {
             <Text style={styles.icon}>{getIcon(notif.type)}</Text>
             <View style={styles.content}>
               <Text style={styles.notifTitle}>{notif.title || notif.type}</Text>
-              <Text style={styles.notifBody}>{notif.body || notif.message || ''}</Text>
+              <Text style={styles.notifBody}>{notif.description || notif.body || notif.message || ''}</Text>
               <Text style={styles.notifTime}>
                 {notif.createdAt?.toDate?.()?.toLocaleDateString() || ''}
               </Text>

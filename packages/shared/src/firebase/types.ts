@@ -170,11 +170,14 @@ export interface Testimony {
 export interface BibleStudy {
   id: string;
   title: string;
-  teacher: string;
+  teacherName: string;
   members: string[];
   startDate: Timestamp;
   materials: Material[];
   status: 'started' | 'pending' | 'completed';
+  description?: string;
+  imageURL?: string;
+  createdAt?: Timestamp;
 }
 
 export interface Notification {
@@ -182,7 +185,8 @@ export interface Notification {
   userId: string;
   type: string;
   title: string;
-  body: string;
+  description: string;
+  link?: string;
   read: boolean;
   createdAt: Timestamp;
 }

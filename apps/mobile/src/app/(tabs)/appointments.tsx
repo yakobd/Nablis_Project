@@ -32,9 +32,12 @@ interface AppointmentDoc {
   serviceType: string;
   status: string;
   date?: Timestamp | null;
+  privateNote?: string;
   note?: string;
   userId: string;
+  memberId?: string;
   userName?: string;
+  memberName?: string;
   createdAt?: Timestamp;
 }
 
@@ -166,9 +169,9 @@ function AdminAppointments() {
           {displayed.map((a) => (
             <View key={a.id} style={styles.adminCard}>
               <View style={styles.adminCardTop}>
-                <Avatar name={a.userName || "M"} size={32} />
+                <Avatar name={a.memberName || a.userName || "M"} size={32} />
                 <View style={styles.adminCardInfo}>
-                  <Text style={styles.adminCardName}>{a.userName || "Member"}</Text>
+                  <Text style={styles.adminCardName}>{a.memberName || a.userName || "Member"}</Text>
                   <Text style={styles.adminCardType}>{a.serviceType}</Text>
                 </View>
                 <StatusBadge status={a.status} />
@@ -178,8 +181,8 @@ function AdminAppointments() {
                   {fmtDate(a.date)}
                 </Text>
               )}
-              {a.note ? (
-                <Text style={styles.adminCardNote} numberOfLines={2}>{a.note}</Text>
+              {(a.privateNote || a.note) ? (
+                <Text style={styles.adminCardNote} numberOfLines={2}>{a.privateNote || a.note}</Text>
               ) : null}
               {a.status === "pending" && (
                 <View style={styles.adminCardActions}>
@@ -277,10 +280,12 @@ function MemberAppointments() {
       }
       await addDoc(collection(db, "appointments"), {
         userId:      user.id,
+        memberId:    user.id,
         userName:    user.displayName || user.email,
+        memberName:  user.displayName || user.email,
         serviceType: service,
         date:        dateTs,
-        note:        noteText.trim() || null,
+        privateNote: noteText.trim() || null,
         status:      "pending",
         createdAt:   serverTimestamp(),
       });
