@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  collection, query, orderBy, getDocs, addDoc, updateDoc, doc,
+  collection, query, getDocs, addDoc, updateDoc, doc,
   serverTimestamp, Timestamp,
 } from "firebase/firestore";
 import { db } from '../../lib/firebase';
@@ -94,8 +94,12 @@ function AdminTestimonies() {
   async function load() {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, "testimonies"), orderBy("createdAt", "desc")));
-      setAll(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony)));
+      const snap = await getDocs(collection(db, "testimonies"));
+      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony));
+      data.sort((a, b) => ((b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0)));
+      setAll(data);
+    } catch {
+      setAll([]);
     } finally {
       setLoading(false);
     }
@@ -253,8 +257,12 @@ function MemberTestimonies() {
   async function load() {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, "testimonies"), orderBy("createdAt", "desc")));
-      setAll(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony)));
+      const snap = await getDocs(collection(db, "testimonies"));
+      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony));
+      data.sort((a, b) => ((b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0)));
+      setAll(data);
+    } catch {
+      setAll([]);
     } finally {
       setLoading(false);
     }

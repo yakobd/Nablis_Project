@@ -167,6 +167,8 @@ function EditProfileSheet({
   const [city,          setCity]          = useState("");
   const [parishChurch,  setParishChurch]  = useState("");
 
+  const [employmentStatus, setEmploymentStatus] = useState("");
+
   const [photoUri,    setPhotoUri]    = useState<string | null>(null);
   const [uploading,   setUploading]   = useState(false);
   const [saving,      setSaving]      = useState(false);
@@ -181,6 +183,7 @@ function EditProfileSheet({
     setPhone(((u.phone ?? u.phoneNumber) as string) ?? "");
     setCity((u.cityOfResidence as string) ?? (u.city as string) ?? "");
     setParishChurch((u.parishChurch as string) ?? "");
+    setEmploymentStatus((u.employmentStatus as string) ?? "");
     setPhotoUri(null);
     setMsg(null);
   }, [visible]);
@@ -222,6 +225,7 @@ function EditProfileSheet({
         phoneNumber:        phone.trim(),
         cityOfResidence:    city.trim(),
         parishChurch:       parishChurch.trim(),
+        employmentStatus:   employmentStatus || null,
         ...(photoURL !== user.photoURL ? { photoURL } : {}),
         updatedAt: serverTimestamp(),
       });
@@ -273,6 +277,31 @@ function EditProfileSheet({
       <LabeledInput label="Phone Number" value={phone} onChange={setPhone} placeholder="+971 5X XXX XXXX" keyboardType="phone-pad" />
       <LabeledInput label="City of Residence" value={city} onChange={setCity} placeholder="e.g. Dubai" />
       <LabeledInput label="Parish Church" value={parishChurch} onChange={setParishChurch} placeholder="Your local parish" />
+
+      <View style={inputStyles.wrap}>
+        <Text style={inputStyles.label}>Employment / Work Status</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {[
+            { value: 'employed',      label: 'Employed'      },
+            { value: 'self_employed', label: 'Self Employed' },
+            { value: 'student',       label: 'Student'       },
+            { value: 'unemployed',    label: 'Unemployed'    },
+            { value: 'retired',       label: 'Retired'       },
+            { value: 'other',         label: 'Other'         },
+          ].map((opt) => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[empStyles.chip, employmentStatus === opt.value && empStyles.chipActive]}
+              onPress={() => setEmploymentStatus(opt.value)}
+            >
+              <Text style={[empStyles.chipTxt, employmentStatus === opt.value && empStyles.chipTxtActive]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
       <LabeledInput label="Email Address" value={user?.email ?? ""} editable={false} />
 
       <TouchableOpacity
@@ -293,6 +322,13 @@ function EditProfileSheet({
     </BottomSheet>
   );
 }
+
+const empStyles = StyleSheet.create({
+  chip:         { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: C.border, marginRight: 8, backgroundColor: C.white },
+  chipActive:   { backgroundColor: C.navy, borderColor: C.navy },
+  chipTxt:      { fontSize: 12, fontWeight: "600", color: C.dark },
+  chipTxtActive:{ color: C.white },
+});
 
 const sheetStyles = StyleSheet.create({
   title:        { fontSize: 17, fontWeight: "800", color: C.navy, marginBottom: 20 },

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator,
+  ActivityIndicator, Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { collection, query, getDocs, doc, updateDoc, arrayUnion, Timestamp } from "firebase/firestore";
@@ -72,6 +72,7 @@ export default function BibleStudyScreen() {
   const [studies, setStudies] = useState<BibleStudy[]>([]);
   const [loading, setLoading] = useState(true);
   const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [materialsStudy, setMaterialsStudy] = useState<BibleStudy | null>(null);
 
   useEffect(() => {
     getDocs(query(collection(db, "bibleStudies")))
@@ -165,6 +166,17 @@ export default function BibleStudyScreen() {
                     {s.status !== "completed" && (
                       <ProgressBar value={s.status === "active" ? 60 : 0} max={100} />
                     )}
+                    {(s.materials ?? []).length > 0 && (
+                      <TouchableOpacity
+                        style={styles.materialsBtn}
+                        onPress={() => setMaterialsStudy(s)}
+                      >
+                        <Ionicons name="document-text-outline" size={12} color={C.navy} />
+                        <Text style={styles.materialsBtnTxt}>
+                          View Materials ({s.materials?.length ?? 0})
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               ))
@@ -217,6 +229,49 @@ export default function BibleStudyScreen() {
 
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* Materials modal */}
+      <Modal
+        visible={!!materialsStudy}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMaterialsStudy(null)}
+      >
+        <View style={styles.matOverlay}>
+          <View style={styles.matSheet}>
+            <View style={styles.matHandle} />
+            <Text style={styles.matTitle} numberOfLines={2}>
+              {materialsStudy?.title} — Materials
+            </Text>
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+              {(materialsStudy?.materials ?? []).length === 0 ? (
+                <View style={[styles.emptyWrap, { paddingVertical: 20 }]}>
+                  <Text style={styles.emptyTxt}>No materials available yet.</Text>
+                </View>
+              ) : (
+                (materialsStudy?.materials ?? []).map((m: any, i: number) => {
+                  const label = typeof m === "string" ? m : (m.title || m.url || `Material ${i + 1}`);
+                  const type  = typeof m === "object" ? (m.type ?? "") : "";
+                  return (
+                    <View key={i} style={styles.matItem}>
+                      <Ionicons
+                        name={type === "video" ? "videocam-outline" : type === "audio" ? "musical-notes-outline" : "document-text-outline"}
+                        size={16}
+                        color={C.navy}
+                        style={{ marginRight: 10 }}
+                      />
+                      <Text style={styles.matItemTxt} numberOfLines={2}>{label}</Text>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+            <TouchableOpacity style={styles.matCloseBtn} onPress={() => setMaterialsStudy(null)}>
+              <Text style={styles.matCloseTxt}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -254,4 +309,14 @@ const styles = StyleSheet.create({
   badgeTxt:     { fontSize: 9, fontWeight: "700" },
   joinBtn:      { marginTop: 4, backgroundColor: C.light, borderRadius: 8, paddingVertical: 6, alignItems: "center" },
   joinTxt:      { fontSize: 12, fontWeight: "700", color: C.navy },
+  materialsBtn: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8, backgroundColor: C.light, borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, alignSelf: "flex-start" },
+  materialsBtnTxt: { fontSize: 12, fontWeight: "700", color: C.navy },
+  matOverlay:   { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  matSheet:     { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: "70%" },
+  matHandle:    { width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: "center", marginBottom: 16 },
+  matTitle:     { fontSize: 16, fontWeight: "800", color: C.navy, marginBottom: 16 },
+  matItem:      { flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border },
+  matItemTxt:   { flex: 1, fontSize: 14, color: C.dark },
+  matCloseBtn:  { marginTop: 16, backgroundColor: C.light, borderRadius: 12, paddingVertical: 12, alignItems: "center" },
+  matCloseTxt:  { fontSize: 14, fontWeight: "700", color: C.navy },
 });

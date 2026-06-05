@@ -207,7 +207,11 @@ function AdminMessages() {
       const snap = await getDocs(
         query(collection(db, "conversations"), orderBy("lastAt", "desc"))
       );
-      setConvos(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Conversation)));
+      setConvos(
+        snap.docs
+          .filter((d) => (d.data().type ?? "member_admin") !== "member_superadmin")
+          .map((d) => ({ id: d.id, ...d.data() } as Conversation))
+      );
     } finally {
       setLoading(false);
     }
@@ -306,6 +310,7 @@ function MemberMessages() {
             lastAt:      serverTimestamp(),
             unread:      0,
             createdAt:   serverTimestamp(),
+            type:        "member_admin",
           });
           id = ref.id;
         }

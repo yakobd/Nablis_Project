@@ -24,7 +24,10 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { fetchNotifications(); }, []);
+  useEffect(() => {
+    const timeoutId = setTimeout(() => setLoading(false), 5000);
+    fetchNotifications().finally(() => clearTimeout(timeoutId));
+  }, []);
 
   async function fetchNotifications() {
     const user = auth.currentUser;
