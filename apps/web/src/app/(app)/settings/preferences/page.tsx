@@ -1,6 +1,6 @@
 "use client";
-import React, { useState } from "react";
-import { doc, updateDoc } from "firebase/firestore";
+import React, { useEffect, useState } from "react";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db, useAuth } from "@/lib/firebase";
 import { Sun, Moon, Monitor, CheckCircle, AlertCircle } from "lucide-react";
 
@@ -56,6 +56,26 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 
 const SELECT = "w-full px-4 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] bg-white focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors";
 
+function applyAppearance(val: string) {
+  if (typeof document === 'undefined') return;
+  if (val === 'dark') document.documentElement.classList.add('dark');
+  else if (val === 'light') document.documentElement.classList.remove('dark');
+  else {
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches)
+      document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+  }
+}
+function applyFontSize(val: number) {
+  if (typeof document === 'undefined') return;
+  document.documentElement.style.fontSize = val + '%';
+}
+function applyHighContrast(val: boolean) {
+  if (typeof document === 'undefined') return;
+  if (val) document.documentElement.style.filter = 'contrast(1.2)';
+  else document.documentElement.style.filter = '';
+}
+
 export default function PreferencesPage() {
   const { user } = useAuth();
   const [language, setLanguage]     = useState<"en" | "am">("en");
@@ -65,6 +85,23 @@ export default function PreferencesPage() {
   const [fontSize, setFontSize]     = useState(80);
   const [saving, setSaving]         = useState(false);
   const [msg, setMsg]               = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, "users", user.id)).then((snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      const prefs = data?.preferences ?? {};
+      if (prefs.language) setLanguage(prefs.language as "en" | "am");
+      if (prefs.timezone) setTimezone(prefs.timezone as string);
+      if (prefs.appearance) setAppearance(prefs.appearance as Appearance);
+      if (typeof prefs.highContrast === 'boolean') setHighContrast(prefs.highContrast as boolean);
+      if (typeof prefs.fontSize === 'number') setFontSize(prefs.fontSize as number);
+      applyAppearance(prefs.appearance ?? 'system');
+      applyFontSize(prefs.fontSize ?? 80);
+      applyHighContrast(prefs.highContrast ?? false);
+    });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!user) return null;
 
@@ -79,6 +116,9 @@ export default function PreferencesPage() {
         "preferences.highContrast": highContrast,
         "preferences.fontSize":    fontSize,
       });
+      applyAppearance(appearance);
+      applyFontSize(fontSize);
+      applyHighContrast(highContrast);
       setMsg({ type: "ok", text: "Preferences saved successfully." });
     } catch {
       setMsg({ type: "err", text: "Failed to save. Please try again." });
@@ -121,7 +161,7 @@ export default function PreferencesPage() {
           {APPEARANCE_OPTIONS.map(({ value, label, icon }) => (
             <button
               key={value}
-              onClick={() => setAppearance(value)}
+              onClick={() => { setAppearance(value); applyAppearance(value); }}
               className={[
                 "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all",
                 appearance === value
@@ -146,7 +186,7 @@ export default function PreferencesPage() {
               <p className="text-sm font-medium text-[#374151]">High Contrast Mode</p>
               <p className="text-xs text-[#9CA3AF] mt-0.5">Increase contrast for better readability</p>
             </div>
-            <Toggle checked={highContrast} onChange={setHighContrast} />
+            <Toggle checked={highContrast} onChange={(v) => { setHighContrast(v); applyHighContrast(v); }} />
           </div>
 
           <div>
@@ -163,7 +203,7 @@ export default function PreferencesPage() {
               max={120}
               step={5}
               value={fontSize}
-              onChange={(e) => setFontSize(Number(e.target.value))}
+              onChange={(e) => { setFontSize(Number(e.target.value)); applyFontSize(Number(e.target.value)); }}
               className="w-full accent-[#1B2E6B] cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-[#9CA3AF] mt-1">

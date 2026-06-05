@@ -180,18 +180,24 @@ function AdminMessaging() {
   useEffect(() => {
     getDocs(query(collection(db, "conversations"), orderBy("lastAt", "desc")))
       .then((snap) => {
-        setConvos(snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id:                 d.id,
-            participantId:      data.memberId ?? "",
-            participantName:    data.memberName ?? "Unknown",
-            participantInitial: (data.memberName ?? "?")[0].toUpperCase(),
-            lastMessage:        data.lastMessage ?? "",
-            lastAt:             data.lastAt ?? null,
-            unread:             data.unread ?? 0,
-          } as Conversation;
-        }));
+        setConvos(snap.docs
+          .filter((d) => {
+            const data = d.data();
+            const convType = data.type ?? 'member_admin';
+            return convType !== 'member_superadmin';
+          })
+          .map((d) => {
+            const data = d.data();
+            return {
+              id:                 d.id,
+              participantId:      data.memberId ?? "",
+              participantName:    data.memberName ?? "Unknown",
+              participantInitial: (data.memberName ?? "?")[0].toUpperCase(),
+              lastMessage:        data.lastMessage ?? "",
+              lastAt:             data.lastAt ?? null,
+              unread:             data.unread ?? 0,
+            } as Conversation;
+          }));
       })
       .finally(() => setLoading(false));
   }, []);
@@ -297,6 +303,7 @@ function MemberMessaging() {
             lastMessage: "",
             lastAt:      serverTimestamp(),
             unread:      0,
+            type:        'member_admin',
             createdAt:   serverTimestamp(),
           });
           setConvoId(ref.id);

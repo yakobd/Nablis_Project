@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import {
-  collection, query, where, orderBy, onSnapshot,
+  collection, query, where, getDocs,
   doc, updateDoc, writeBatch, Timestamp,
 } from "firebase/firestore";
 import { db, useAuth } from "@/lib/firebase";
@@ -59,20 +59,34 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     if (!user) return;
+    const timeoutId = setTimeout(() => setLoading(false), 5000);
+
     const q = query(
-      collection(db, "notifications"),
-      where("userId", "==", user.id),
-      orderBy("createdAt", "desc")
+      collection(db, 'notifications'),
+      where('userId', '==', user.id)
     );
-    const unsub = onSnapshot(q, (snap) => {
-      setNotifications(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Notification)));
-      setLoading(false);
-    });
-    return unsub;
-  }, [user]);
+
+    getDocs(q)
+      .then((snap) => {
+        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Notification));
+        data.sort((a, b) => ((b.createdAt as any)?.seconds ?? 0) - ((a.createdAt as any)?.seconds ?? 0));
+        setNotifications(data);
+      })
+      .catch((e) => {
+        console.error('Notifications error:', e);
+        setNotifications([]);
+      })
+      .finally(() => {
+        clearTimeout(timeoutId);
+        setLoading(false);
+      });
+
+    return () => clearTimeout(timeoutId);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function markRead(id: string) {
     await updateDoc(doc(db, "notifications", id), { read: true });
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
   }
 
   async function markAllRead() {
@@ -81,6 +95,7 @@ export default function NotificationsPage() {
     const batch = writeBatch(db);
     unread.forEach((n) => batch.update(doc(db, "notifications", n.id), { read: true }));
     await batch.commit();
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   }
 
   async function handleClick(n: Notification) {

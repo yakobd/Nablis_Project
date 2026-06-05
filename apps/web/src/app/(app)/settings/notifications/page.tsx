@@ -1,6 +1,6 @@
 "use client";
-import React, { useState } from "react";
-import { doc, updateDoc } from "firebase/firestore";
+import React, { useEffect, useState } from "react";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db, useAuth } from "@/lib/firebase";
 import { CheckCircle, AlertCircle } from "lucide-react";
 
@@ -105,6 +105,26 @@ export default function NotificationsPage() {
   const [enableTagging, setEnableTagging]         = useState(true);
   const [saving, setSaving]                       = useState(false);
   const [msg, setMsg]                             = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, "users", user.id)).then((snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      const n = data?.notifications ?? {};
+      if (n.commentVisibility) setCommentVisibility(n.commentVisibility as string);
+      if (n.reminder?.phone !== undefined) setReminderPhone(n.reminder.phone as boolean);
+      if (n.reminder?.email !== undefined) setReminderEmail(n.reminder.email as boolean);
+      if (n.reminder?.inApp !== undefined) setReminderInApp(n.reminder.inApp as boolean);
+      if (n.snoozed !== undefined) setSnoozed(n.snoozed as boolean);
+      if (n.features?.blogs !== undefined) setBlogNotifs(n.features.blogs as boolean);
+      if (n.features?.events !== undefined) setEventNotifs(n.features.events as boolean);
+      if (n.features?.prayer !== undefined) setPrayerNotifs(n.features.prayer as boolean);
+      if (n.features?.bible !== undefined) setBibleNotifs(n.features.bible as boolean);
+      if (n.blog?.enableComments !== undefined) setEnableComments(n.blog.enableComments as boolean);
+      if (n.gallery?.enableTagging !== undefined) setEnableTagging(n.gallery.enableTagging as boolean);
+    });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!user) return null;
 

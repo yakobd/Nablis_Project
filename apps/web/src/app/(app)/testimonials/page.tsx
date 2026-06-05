@@ -171,7 +171,7 @@ function ReviewModal({
 
 // ── Admin / Super Admin view ──────────────────────────────────────────────────
 function AdminTestimonials() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const [pending,   setPending]   = useState<Testimony[]>([]);
   const [published, setPublished] = useState<Testimony[]>([]);
   const [loading,   setLoading]   = useState(true);
@@ -227,10 +227,12 @@ function AdminTestimonials() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-[#1B2E6B]">Testimonials</h1>
-        <button onClick={() => setAdding(true)}
-          className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
-          <Plus size={15} /> Add Testimony
-        </button>
+        {role === 'super_admin' && (
+          <button onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
+            <Plus size={15} /> Add Testimony
+          </button>
+        )}
       </div>
 
       {/* Stats */}
@@ -332,7 +334,7 @@ function AdminTestimonials() {
       {reviewing && (
         <ReviewModal testimony={reviewing} onClose={() => setReviewing(null)} onAction={handleAction} />
       )}
-      {adding && (
+      {adding && role === 'super_admin' && (
         <AddTestimonyModal
           authorName={user?.displayName || user?.email || "Admin"}
           onClose={() => setAdding(false)}

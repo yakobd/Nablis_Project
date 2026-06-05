@@ -45,6 +45,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, role, loading, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [aptBadge, setAptBadge] = useState(0);
+  const [msgBadge, setMsgBadge] = useState(0);
+  const [memberBadge, setMemberBadge] = useState(0);
 
   const isLoginPage    = pathname === '/login';
   const isRegisterPage = pathname === '/register';
@@ -63,6 +66,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const unsub = onSnapshot(q, (snap) => setUnreadCount(snap.size));
     return unsub;
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Appointments badge: pending appointments
+  useEffect(() => {
+    if (!user) return;
+    const q = role === 'member'
+      ? query(collection(db, 'appointments'), where('memberId', '==', user.id), where('status', '==', 'pending'))
+      : query(collection(db, 'appointments'), where('status', '==', 'pending'));
+    const unsub = onSnapshot(q, (snap) => setAptBadge(snap.size));
+    return unsub;
+  }, [user?.id, role]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Members badge: super_admin only - pending member registrations
+  useEffect(() => {
+    if (!user || role !== 'super_admin') return;
+    const q = query(collection(db, 'users'), where('status', '==', 'pending'));
+    const unsub = onSnapshot(q, (snap) => setMemberBadge(snap.size));
+    return unsub;
+  }, [user?.id, role]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Messaging badge: unread conversations
+  useEffect(() => {
+    if (!user) return;
+    const q = role === 'member'
+      ? query(collection(db, 'conversations'), where('memberId', '==', user.id), where('unread', '>', 0))
+      : query(collection(db, 'conversations'), where('unread', '>', 0));
+    const unsub = onSnapshot(q, (snap) => setMsgBadge(snap.size));
+    return unsub;
+  }, [user?.id, role]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Status-aware routing
   useEffect(() => {
@@ -120,6 +151,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     !item.roles || item.roles.includes(role ?? '')
   );
 
+  function getBadge(key: string): number {
+    if (key === 'notifications') return unreadCount;
+    if (key === 'appointment') return aptBadge;
+    if (key === 'messaging') return msgBadge;
+    if (key === 'members') return memberBadge;
+    return 0;
+  }
+
   return (
     <div className="flex min-h-screen bg-[#EEF1F8]">
       {/* Mobile backdrop */}
@@ -152,24 +191,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Nav items */}
         <nav className="flex-1 px-3 py-2">
-          {visibleNav.map((item) => (
-            <button
-              key={item.key}
-              onClick={() => { router.push(item.path); setSidebarOpen(false); }}
-              className={`w-full text-left px-3 py-2.5 rounded-lg mb-1 text-sm font-medium transition-colors cursor-pointer flex items-center justify-between
-                ${activeKey === item.key
-                  ? 'bg-[#1B2E6B] text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-                }`}
-            >
-              <span>{item.label}</span>
-              {item.key === 'notifications' && unreadCount > 0 && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${activeKey === item.key ? 'bg-white text-[#1B2E6B]' : 'bg-[#1B2E6B] text-white'}`}>
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </span>
-              )}
-            </button>
-          ))}
+          {visibleNav.map((item) => {
+            const badgeCount = getBadge(item.key);
+            return (
+              <button
+                key={item.key}
+                onClick={() => { router.push(item.path); setSidebarOpen(false); }}
+                className={`w-full text-left px-3 py-2.5 rounded-lg mb-1 text-sm font-medium transition-colors cursor-pointer flex items-center justify-between
+                  ${activeKey === item.key
+                    ? 'bg-[#1B2E6B] text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+              >
+                <span>{item.label}</span>
+                {badgeCount > 0 && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${activeKey === item.key ? 'bg-white text-[#1B2E6B]' : 'bg-red-500 text-white'}`}>
+                    {badgeCount > 99 ? '99+' : badgeCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </nav>
 
         {/* Logout */}
@@ -225,9 +267,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <span className="hidden sm:block text-sm text-gray-600 font-medium truncate max-w-[140px]">
               {user.displayName || user.email}
             </span>
-            <div className="w-9 h-9 rounded-full bg-[#1B2E6B] text-white flex items-center justify-center text-sm font-bold flex-shrink-0">
-              {(user.displayName || user.email || 'U')[0].toUpperCase()}
-            </div>
+            {user.photoURL ? (
+              <img src={user.photoURL} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-[#1B2E6B] text-white flex items-center justify-center text-sm font-bold flex-shrink-0">
+                {(user.displayName || user.email || 'U')[0].toUpperCase()}
+              </div>
+            )}
           </div>
         </header>
 

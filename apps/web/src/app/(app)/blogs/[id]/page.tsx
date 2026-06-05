@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { doc, getDoc, updateDoc, Timestamp } from "firebase/firestore";
+import { doc, getDoc, getDocs, addDoc, collection, updateDoc, Timestamp, serverTimestamp } from "firebase/firestore";
 import { db, useAuth } from "@/lib/firebase";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -96,7 +96,7 @@ function CommentItem({
 export default function BlogDetailPage() {
   const { id }   = useParams<{ id: string }>();
   const router   = useRouter();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const [post, setPost]               = useState<BlogPost | null>(null);
   const [comments, setComments]       = useState<ExtComment[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -105,6 +105,8 @@ export default function BlogDetailPage() {
   const [replyText, setReplyText]     = useState("");
   const [postingReply, setPostingReply] = useState(false);
   const [saving, setSaving]           = useState(false);
+  const [newComment, setNewComment]   = useState("");
+  const [postingComment, setPostingComment] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -118,6 +120,17 @@ export default function BlogDetailPage() {
         }
       })
       .finally(() => setLoading(false));
+    // Load subcollection comments
+    getDocs(collection(db, "blogPosts", id, "comments")).then((snap) => {
+      if (!snap.empty) {
+        const subComments = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ExtComment));
+        setComments((prev) => {
+          const existingIds = new Set(prev.map((c) => c.id));
+          const newOnes = subComments.filter((c) => !existingIds.has(c.id));
+          return [...prev, ...newOnes];
+        });
+      }
+    });
   }, [id]);
 
   async function toggleComments(val: boolean) {
@@ -155,6 +168,30 @@ export default function BlogDetailPage() {
       setReplyingTo(null);
     } finally {
       setPostingReply(false);
+    }
+  }
+
+  async function postComment() {
+    if (!newComment.trim() || !user || !id) return;
+    setPostingComment(true);
+    try {
+      const commentData: ExtComment = {
+        id: Date.now().toString(),
+        authorId: user.id,
+        authorName: user.displayName || user.email || "Member",
+        content: newComment.trim(),
+        createdAt: Timestamp.now(),
+      };
+      await addDoc(collection(db, "blogPosts", id, "comments"), {
+        authorId: user.id,
+        authorName: user.displayName || user.email || "Member",
+        content: newComment.trim(),
+        createdAt: serverTimestamp(),
+      });
+      setComments((prev) => [...prev, commentData]);
+      setNewComment("");
+    } finally {
+      setPostingComment(false);
     }
   }
 
@@ -279,6 +316,29 @@ export default function BlogDetailPage() {
                     <Send size={13} /> Post Response
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Member comment input */}
+          {!disableComments && (
+            <div className="flex items-start gap-3 pt-3 border-t border-[#F3F4F6] mt-3">
+              <div className="w-8 h-8 rounded-full bg-[#1B2E6B] flex items-center justify-center text-[#F5C518] font-bold text-xs flex-shrink-0">
+                {(user.displayName || user.email || "U")[0].toUpperCase()}
+              </div>
+              <div className="flex-1 flex gap-2">
+                <input
+                  type="text"
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postComment(); } }}
+                  placeholder="Write a comment…"
+                  className="flex-1 px-3 py-2 rounded-xl border border-[#E5E7EB] text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors"
+                />
+                <button onClick={postComment} disabled={postingComment || !newComment.trim()}
+                  className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2 rounded-xl hover:bg-[#e6b800] disabled:opacity-60 transition-colors flex-shrink-0">
+                  <Send size={13} /> Post
+                </button>
               </div>
             </div>
           )}

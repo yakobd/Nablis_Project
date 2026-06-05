@@ -2,9 +2,10 @@
 import React, { useEffect, useState } from "react";
 import {
   collection, query, orderBy, where, getDocs, addDoc, updateDoc, deleteDoc,
-  doc, serverTimestamp, Timestamp, writeBatch,
+  doc, serverTimestamp, Timestamp, writeBatch, arrayUnion,
 } from "firebase/firestore";
 import { db, useAuth } from "@/lib/firebase";
+import { uploadToCloudinary } from "@/lib/cloudinary";
 import {
   Plus, X, Calendar, MapPin, Users, Clock, ChevronRight,
   Pencil, Trash2, Send, Search,
@@ -59,6 +60,9 @@ function EventFormModal({ initial, onClose, onSaved }: EventFormProps) {
   const [endDate, setEndDate]     = useState(toDatetimeLocal((initial as any)?.endDate));
   const [isFree, setIsFree]       = useState((initial as any)?.free ?? false);
   const [isVol, setIsVol]         = useState((initial as any)?.volunteer ?? false);
+  const [imageFile, setImageFile]       = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>((initial as any)?.imageURL ?? "");
+  const [uploadingImg, setUploadingImg] = useState(false);
   const [saving, setSaving]       = useState(false);
   const [deleting, setDeleting]   = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -67,6 +71,12 @@ function EventFormModal({ initial, onClose, onSaved }: EventFormProps) {
     if (!title.trim()) return;
     setSaving(true);
     try {
+      let imageURL = (initial as any)?.imageURL ?? "";
+      if (imageFile) {
+        setUploadingImg(true);
+        try { imageURL = await uploadToCloudinary(imageFile, "nablis/events"); }
+        finally { setUploadingImg(false); }
+      }
       const payload = {
         title:         title.trim(),
         description:   description.trim(),
@@ -77,6 +87,7 @@ function EventFormModal({ initial, onClose, onSaved }: EventFormProps) {
         endDate:       endDate   ? Timestamp.fromDate(new Date(endDate))   : null,
         free:          isFree,
         volunteer:     isVol,
+        imageURL,
         updatedAt:     serverTimestamp(),
       };
       if (initial?.id) {
@@ -138,6 +149,26 @@ function EventFormModal({ initial, onClose, onSaved }: EventFormProps) {
               placeholder="Describe the event…"
               className={INPUT + " resize-none"} />
           </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Event Image</label>
+            {imagePreview && (
+              <div className="mb-2 relative">
+                <img src={imagePreview} alt="" className="w-full h-28 object-cover rounded-xl" />
+                <button type="button" onClick={() => { setImagePreview(""); setImageFile(null); }}
+                  className="absolute top-1 right-1 p-1 rounded-full bg-black/50 text-white hover:bg-black/70">
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+            <input type="file" accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setImageFile(file);
+                setImagePreview(URL.createObjectURL(file));
+              }}
+              className="w-full text-sm text-[#6B7280] file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#EEF1F8] file:text-[#1B2E6B] hover:file:bg-[#dde3f0] cursor-pointer" />
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-[#374151] mb-1.5">Category</label>
@@ -181,10 +212,10 @@ function EventFormModal({ initial, onClose, onSaved }: EventFormProps) {
           </div>
         </div>
         <div className="px-6 pb-6 space-y-2">
-          <button onClick={handleSave} disabled={saving || !title.trim()}
+          <button onClick={handleSave} disabled={saving || uploadingImg || !title.trim()}
             className="w-full flex items-center justify-center gap-2 bg-[#F5C518] text-[#1B2E6B] font-semibold py-2.5 rounded-xl hover:bg-[#e6b800] disabled:opacity-60 transition-colors text-sm">
-            {saving ? <div className="w-4 h-4 border-2 border-[#1B2E6B]/40 border-t-[#1B2E6B] rounded-full animate-spin" /> : <Send size={14} />}
-            {initial ? "Save Changes" : "Create Event"}
+            {(saving || uploadingImg) ? <div className="w-4 h-4 border-2 border-[#1B2E6B]/40 border-t-[#1B2E6B] rounded-full animate-spin" /> : <Send size={14} />}
+            {uploadingImg ? "Uploading Image…" : initial ? "Save Changes" : "Create Event"}
           </button>
           {initial && (
             confirmDel ? (
@@ -213,7 +244,7 @@ function EventFormModal({ initial, onClose, onSaved }: EventFormProps) {
 }
 
 // ── Event card ────────────────────────────────────────────────────────────────
-function EventCard({ ev, onEdit, isAdminOrSuperAdmin }: { ev: Event; onEdit?: () => void; isAdminOrSuperAdmin: boolean }) {
+function EventCard({ ev, onEdit, isAdminOrSuperAdmin, onRsvp, userId }: { ev: Event; onEdit?: () => void; isAdminOrSuperAdmin: boolean; onRsvp?: (ev: Event) => void; userId?: string }) {
   const b = badge(ev);
   return (
     <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm overflow-hidden group hover:shadow-md transition-shadow">
@@ -255,16 +286,24 @@ function EventCard({ ev, onEdit, isAdminOrSuperAdmin }: { ev: Event; onEdit?: ()
             </div>
           )}
         </div>
-        <button className="mt-3 flex items-center gap-1 text-xs font-semibold text-[#1B2E6B] hover:text-[#F5C518] transition-colors">
-          View Details <ChevronRight size={12} />
-        </button>
+        {!isAdminOrSuperAdmin && (() => {
+          const isRegistered = ((ev as any).rsvps ?? []).some((r: any) => r.userId === userId);
+          return (
+            <button
+              onClick={(e) => { e.stopPropagation(); if (!isRegistered && onRsvp) onRsvp(ev); }}
+              disabled={isRegistered}
+              className={`mt-3 w-full py-2 rounded-xl text-xs font-bold transition-colors ${isRegistered ? 'bg-green-50 text-green-700 cursor-default' : 'bg-[#F5C518] text-[#1B2E6B] hover:bg-[#e6b800]'}`}>
+              {isRegistered ? '✓ Registered' : 'Register Now'}
+            </button>
+          );
+        })()}
       </div>
     </div>
   );
 }
 
 // ── Featured banner ───────────────────────────────────────────────────────────
-function FeaturedBanner({ ev, onEdit, isAdminOrSuperAdmin }: { ev: Event; onEdit?: () => void; isAdminOrSuperAdmin: boolean }) {
+function FeaturedBanner({ ev, onEdit, isAdminOrSuperAdmin, onRsvp, userId }: { ev: Event; onEdit?: () => void; isAdminOrSuperAdmin: boolean; onRsvp?: (ev: Event) => void; userId?: string }) {
   const b = badge(ev);
   return (
     <div className="bg-[#1B2E6B] rounded-2xl overflow-hidden relative h-52 flex items-end">
@@ -291,9 +330,17 @@ function FeaturedBanner({ ev, onEdit, isAdminOrSuperAdmin }: { ev: Event; onEdit
               <Pencil size={12} /> Edit
             </button>
           )}
-          <button className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#F5C518] text-[#1B2E6B] text-sm font-bold hover:bg-[#e6b800] transition-colors">
-            Register Now <ChevronRight size={14} />
-          </button>
+          {!isAdminOrSuperAdmin && (() => {
+            const isRegistered = ((ev as any).rsvps ?? []).some((r: any) => r.userId === userId);
+            return (
+              <button
+                onClick={() => { if (!isRegistered && onRsvp) onRsvp(ev); }}
+                disabled={isRegistered}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-colors ${isRegistered ? 'bg-green-400 text-white cursor-default' : 'bg-[#F5C518] text-[#1B2E6B] hover:bg-[#e6b800]'}`}>
+                {isRegistered ? '✓ Registered' : <><span>Register Now</span> <ChevronRight size={14} /></>}
+              </button>
+            );
+          })()}
         </div>
       </div>
     </div>
@@ -318,6 +365,15 @@ export default function EventsPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
+
+  async function handleRsvp(ev: Event) {
+    if (!user) return;
+    const rsvpEntry = { userId: user.id, userName: user.displayName || user.email, registeredAt: new Date().toISOString() };
+    await updateDoc(doc(db, "events", ev.id), {
+      rsvps: arrayUnion(rsvpEntry),
+    });
+    setEvents((prev) => prev.map((e) => e.id === ev.id ? { ...e, rsvps: [...((e as any).rsvps ?? []), rsvpEntry] } as Event : e));
+  }
 
   if (!user) return null;
 
@@ -389,6 +445,8 @@ export default function EventsPage() {
           {/* Featured banner */}
           {featured && (
             <FeaturedBanner ev={featured} isAdminOrSuperAdmin={isAdminOrSuperAdmin}
+              userId={user.id}
+              onRsvp={handleRsvp}
               onEdit={() => { setEditEvent(featured); setShowForm(true); }} />
           )}
 
@@ -397,6 +455,8 @@ export default function EventsPage() {
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {rest.map((ev) => (
                 <EventCard key={ev.id} ev={ev} isAdminOrSuperAdmin={isAdminOrSuperAdmin}
+                  userId={user.id}
+                  onRsvp={handleRsvp}
                   onEdit={() => { setEditEvent(ev); setShowForm(true); }} />
               ))}
             </div>

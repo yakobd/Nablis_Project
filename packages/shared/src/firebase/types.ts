@@ -56,6 +56,9 @@ export interface User {
   city?: string;
   zipCode?: string;
   documents?: string[];
+
+  // Employment
+  employmentStatus?: 'employed' | 'self_employed' | 'student' | 'unemployed' | 'retired' | 'other';
 }
 
 export interface Appointment {

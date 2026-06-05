@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import {
-  collection, query, orderBy, getDocs, Timestamp,
+  collection, query, orderBy, getDocs, updateDoc, doc, arrayUnion, Timestamp,
 } from "firebase/firestore";
 import { db, useAuth } from "@/lib/firebase";
 import Link from "next/link";
@@ -319,16 +319,43 @@ function MemberBibleStudy({ studies, loading }: { studies: BibleStudy[]; loading
             <CheckCircle2 size={14} /> Quick Actions
           </h3>
           <div className="space-y-2">
-            {[
-              { label: "View Materials",    icon: FileText },
-              { label: "Join Next Session", icon: Users },
-              { label: "Contact Teacher",   icon: Bell },
-            ].map(({ label, icon: Icon }) => (
-              <button key={label}
+            {myStudies.length > 0 && (
+              <button
+                onClick={() => {
+                  const s = myStudies[0];
+                  if (s.materials && s.materials.length > 0) {
+                    alert(`Materials for "${s.title}":\n${s.materials.map((m: any) => typeof m === 'string' ? m : m.title || m.url).join('\n')}`);
+                  } else {
+                    alert('No materials available for your current studies.');
+                  }
+                }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] font-medium hover:bg-[#EEF1F8] transition-colors">
-                <Icon size={14} className="text-[#1B2E6B]" /> {label}
+                <FileText size={14} className="text-[#1B2E6B]" /> View Materials
               </button>
-            ))}
+            )}
+            {studies.filter((s) => !s.members?.includes(user?.id ?? '') && s.status !== 'completed').length > 0 && (
+              <button
+                onClick={async () => {
+                  const available = studies.find((s) => !s.members?.includes(user?.id ?? '') && s.status !== 'completed');
+                  if (!available || !user) return;
+                  try {
+                    await updateDoc(doc(db, 'bibleStudies', available.id), {
+                      members: arrayUnion(user.id),
+                    });
+                    alert(`Joined "${available.title}" successfully!`);
+                  } catch {
+                    alert('Failed to join study. Please try again.');
+                  }
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] font-medium hover:bg-[#EEF1F8] transition-colors">
+                <Users size={14} className="text-[#1B2E6B]" /> Join Next Session
+              </button>
+            )}
+            <button
+              onClick={() => alert(`Your study completion: ${progress}%\n${myStudies.filter(s => s.status === 'completed').length} of ${myStudies.length} completed.`)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] font-medium hover:bg-[#EEF1F8] transition-colors">
+              <Bell size={14} className="text-[#1B2E6B]" /> View Progress
+            </button>
           </div>
         </div>
       </div>

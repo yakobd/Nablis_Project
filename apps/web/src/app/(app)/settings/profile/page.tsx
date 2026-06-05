@@ -187,6 +187,7 @@ export default function ProfilePage() {
   const [city, setCity] = useState("");
   const [neighborhood, setNeighborhood] = useState("");
   const [parishChurch, setParishChurch] = useState("");
+  const [employmentStatus, setEmploymentStatus] = useState("");
 
   /* photo */
   const fileRef = useRef<HTMLInputElement>(null);
@@ -249,6 +250,7 @@ export default function ProfilePage() {
     setCity((u.cityOfResidence as string) ?? "");
     setNeighborhood((u.neighborhood as string) ?? "");
     setParishChurch((u.parishChurch as string) ?? "");
+    setEmploymentStatus((u.employmentStatus as string) ?? "");
 
     const n = (u.notifications as Record<string, unknown>) ?? {};
     const f = (n.features as Record<string, unknown>) ?? {};
@@ -300,6 +302,7 @@ export default function ProfilePage() {
         cityOfResidence: city.trim(),
         neighborhood: neighborhood.trim(),
         parishChurch: parishChurch.trim(),
+        employmentStatus: employmentStatus,
         updatedAt: serverTimestamp(),
       });
       setSaveMsg({ type: "ok", text: "Profile saved successfully." });
@@ -554,6 +557,18 @@ export default function ProfilePage() {
               placeholder="Your local parish"
               className={INPUT}
             />
+          </Field>
+
+          <Field label="Employment / Work Status">
+            <select value={employmentStatus} onChange={(e) => setEmploymentStatus(e.target.value)} className={INPUT + " bg-white"}>
+              <option value="">Select status…</option>
+              <option value="employed">Employed</option>
+              <option value="self_employed">Self Employed</option>
+              <option value="student">Student</option>
+              <option value="unemployed">Unemployed / Job Seeking</option>
+              <option value="retired">Retired</option>
+              <option value="other">Other</option>
+            </select>
           </Field>
         </div>
 
