@@ -1,114 +1,140 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { auth, db } from '../../lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { Ionicons } from '@expo/vector-icons';
+import { collection, addDoc, onSnapshot, query, serverTimestamp, where } from 'firebase/firestore';
+import {
+  useAuth, useVerseOfDay, activePrayers, prayerKey, prayerName, formatTime12, currentStreak, toIsoDate,
+  DEFAULT_PRAYERS, type DailyPrayer, type PrayerLog,
+} from '@nablis/shared/firebase';
+import { db } from '../../lib/firebase';
+import { PrayerCard } from '../../components/PrayerCard';
+import { themedStyles, themedColors } from "../../theme";
+import i18n from "@nablis/i18n";
 
-const PRAYERS = [
-  { id: '1', type: 'morning',   time: '6:00 AM',  message: 'Lord, guide my steps this day. Let your light shine through me in all my actions, words, and thoughts as I walk in your name.' },
-  { id: '2', type: 'afternoon', time: '12:00 PM', message: 'Heavenly Father, thank you for your grace thus far today. Renew my strength and focus as I continue this day in your service.' },
-  { id: '3', type: 'evening',   time: '9:00 PM',  message: 'As the day ends, I release my worries to You. Grant me peaceful rest and gratitude for all You have done.' },
-];
+const L = { navy: '#1B2E6B', yellow: '#F5C518', white: '#FFFFFF', grey: '#6B7280' };
+const C = themedColors(L);
 
+// The ministry's daily prayers (set by admins on the web), with today's
+// progress. Marking one as prayed logs it for the admin progress reports.
 export default function DailyPrayersScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
-  const [statuses, setStatuses] = useState<Record<string, string>>({
-    '1': 'UP NEXT', '2': 'SCHEDULED', '3': 'SCHEDULED',
-  });
+  const { user } = useAuth();
+  const { verse } = useVerseOfDay();
+  const [prayerDocs, setPrayerDocs] = useState<DailyPrayer[] | null>(null);
+  const [logs, setLogs] = useState<PrayerLog[] | null>(null);
   const [marking, setMarking] = useState<string | null>(null);
 
-  async function markAsPrayed(prayerId: string, prayerType: string) {
-    const user = auth.currentUser;
+  useEffect(() => onSnapshot(collection(db, 'dailyPrayers'),
+    (s) => setPrayerDocs(s.docs.map((d) => ({ id: d.id, ...d.data() } as DailyPrayer))),
+    () => setPrayerDocs([])), []);
+
+  useEffect(() => {
     if (!user) return;
-    setMarking(prayerId);
+    return onSnapshot(query(collection(db, 'prayerLogs'), where('userId', '==', user.id)),
+      (s) => setLogs(s.docs.map((d) => ({ id: d.id, ...d.data() } as PrayerLog))),
+      () => setLogs([]));
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Configured prayers; the three standard ones until the ministry adds its own.
+  const prayers: DailyPrayer[] = useMemo(() => {
+    const configured = activePrayers(prayerDocs ?? []);
+    if (prayerDocs && configured.length) return configured;
+    return DEFAULT_PRAYERS.map((p) => ({ ...p, id: p.type!, enabled: true } as DailyPrayer));
+  }, [prayerDocs]);
+
+  const today = toIsoDate(new Date());
+  const doneToday = useMemo(() => new Set((logs ?? [])
+    .filter((l) => l.prayedAt?.toDate && toIsoDate(l.prayedAt.toDate()) === today)
+    .map((l) => l.prayerType)), [logs, today]);
+  const streak = useMemo(() => currentStreak(logs ?? []), [logs]);
+
+  const nowHm = new Date().toTimeString().slice(0, 5);
+  const upNext = prayers.find((p) => !doneToday.has(prayerKey(p)) && p.time <= nowHm)
+    ?? prayers.find((p) => !doneToday.has(prayerKey(p)));
+
+  async function markPrayed(p: DailyPrayer) {
+    const key = prayerKey(p);
+    if (!user || doneToday.has(key)) return;
+    setMarking(key);
     try {
       await addDoc(collection(db, 'prayerLogs'), {
-        userId:     user.uid,
-        prayerType,
-        prayedAt:   serverTimestamp(),
+        userId: user.id, prayerType: key, prayedAt: serverTimestamp(), createdAt: serverTimestamp(),
       });
-      setStatuses(prev => ({ ...prev, [prayerId]: 'COMPLETED' }));
-      Alert.alert('🙏', 'Prayer marked as completed!');
-    } catch (e) {
-      console.error(e);
     } finally {
       setMarking(null);
     }
   }
 
+  const done = prayers.filter((p) => doneToday.has(prayerKey(p))).length;
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel={i18n.t('common.back')}>
+          <Ionicons name="arrow-back" size={22} color={C.navy} />
         </TouchableOpacity>
-        <Text style={styles.title}>Daily Prayers</Text>
+        <Text style={styles.title}>{i18n.t("nav.dailyPrayers")}</Text>
       </View>
 
       <View style={styles.banner}>
-        <Text style={styles.bannerLabel}>MORNING REFLECTION</Text>
-        <Text style={styles.bannerQuote}>"Pray without ceasing."</Text>
-        <Text style={styles.bannerVerse}>— 1 Thessalonians 5:17</Text>
+        <Text style={styles.bannerLabel}>{i18n.t('mobile.verseOfDay')}</Text>
+        <Text style={styles.bannerQuote}>“{verse.text}”</Text>
+        <Text style={styles.bannerVerse}>— {verse.ref}</Text>
       </View>
 
-      {PRAYERS.map(prayer => {
-        const status = statuses[prayer.id];
-        return (
-          <View key={prayer.id} style={styles.prayerCard}>
-            <View style={styles.prayerHeader}>
-              <View>
-                <Text style={styles.prayerName}>
-                  {prayer.type.charAt(0).toUpperCase() + prayer.type.slice(1)} Prayer
-                </Text>
-                <Text style={styles.prayerTime}>{prayer.time}</Text>
-              </View>
-              <View style={[
-                styles.badge,
-                status === 'COMPLETED' ? styles.badgeGreen :
-                status === 'UP NEXT'   ? styles.badgeYellow : styles.badgeGrey,
-              ]}>
-                <Text style={styles.badgeText}>{status}</Text>
-              </View>
-            </View>
-            <Text style={styles.prayerMessage}>{prayer.message}</Text>
-            {status !== 'COMPLETED' && (
-              <TouchableOpacity
-                style={[styles.prayButton, marking === prayer.id && { opacity: 0.6 }]}
-                onPress={() => markAsPrayed(prayer.id, prayer.type)}
-                disabled={marking === prayer.id}
-              >
-                <Text style={styles.prayButtonText}>+ Mark as Prayed</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        );
-      })}
+      <View style={styles.stats}>
+        <View style={styles.stat}>
+          <Ionicons name="flame" size={18} color={C.yellow} />
+          <Text style={styles.statNum}>{streak}</Text>
+          <Text style={styles.statLabel}>{i18n.t('plan.streak')}</Text>
+        </View>
+        <View style={styles.stat}>
+          <Ionicons name="checkmark-done" size={18} color={C.navy} />
+          <Text style={styles.statNum}>{done}/{prayers.length}</Text>
+          <Text style={styles.statLabel}>{i18n.t('mobile.todayGlance')}</Text>
+        </View>
+      </View>
+
+      {logs === null || prayerDocs === null ? (
+        <ActivityIndicator color={C.navy} style={{ marginTop: 24 }} />
+      ) : (
+        <View style={styles.list}>
+          {prayers.map((p) => {
+            const key = prayerKey(p);
+            const status = doneToday.has(key) ? 'completed' : upNext && prayerKey(upNext) === key ? 'upcoming' : 'scheduled';
+            return (
+              <PrayerCard
+                key={p.id}
+                title={prayerName(p)}
+                time={formatTime12(p.time)}
+                prayerText={p.message}
+                status={status}
+                onPress={() => markPrayed(p)}
+                loading={marking === key}
+              />
+            );
+          })}
+        </View>
+      )}
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: '#EEF1F8' },
-  header:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
-  backBtn:        { marginRight: 16 },
-  backText:       { color: '#1B2E6B', fontSize: 16 },
-  title:          { fontSize: 24, fontWeight: 'bold', color: '#1B2E6B' },
-  banner:         { margin: 16, backgroundColor: '#1B2E6B', borderRadius: 12, padding: 20 },
-  bannerLabel:    { color: 'rgba(255,255,255,0.7)', fontSize: 11, marginBottom: 8, letterSpacing: 0.5 },
-  bannerQuote:    { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
-  bannerVerse:    { color: 'rgba(255,255,255,0.8)', fontSize: 13 },
-  prayerCard:     { marginHorizontal: 16, marginBottom: 12, backgroundColor: '#fff', borderRadius: 12, padding: 16 },
-  prayerHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  prayerName:     { fontSize: 16, fontWeight: '600', color: '#1B2E6B' },
-  prayerTime:     { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  badge:          { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
-  badgeGreen:     { backgroundColor: '#D1FAE5' },
-  badgeYellow:    { backgroundColor: '#FEF3C7' },
-  badgeGrey:      { backgroundColor: '#F3F4F6' },
-  badgeText:      { fontSize: 11, fontWeight: '600', color: '#374151' },
-  prayerMessage:  { fontSize: 14, color: '#6B7280', marginBottom: 12, lineHeight: 20 },
-  prayButton:     { backgroundColor: '#1B2E6B', borderRadius: 8, padding: 12, alignItems: 'center' },
-  prayButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+const styles = themedStyles({
+  container:   { flex: 1, backgroundColor: '#EEF1F8' },
+  header:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16, gap: 12 },
+  backBtn:     { padding: 4 },
+  title:       { fontSize: 24, fontWeight: 'bold', color: '#1B2E6B' },
+  banner:      { marginHorizontal: 16, marginBottom: 14, backgroundColor: '#1B2E6B', borderRadius: 16, padding: 20 },
+  bannerLabel: { color: '#F5C518', fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 8 },
+  bannerQuote: { color: '#FFFFFF', fontSize: 17, fontStyle: 'italic', lineHeight: 24, marginBottom: 8 },
+  bannerVerse: { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
+  stats:       { flexDirection: 'row', gap: 12, marginHorizontal: 16, marginBottom: 14 },
+  stat:        { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, alignItems: 'center', gap: 2 },
+  statNum:     { fontSize: 20, fontWeight: '800', color: '#1B2E6B' },
+  statLabel:   { fontSize: 11, color: '#6B7280', textAlign: 'center' },
+  list:        { marginHorizontal: 16 },
 });

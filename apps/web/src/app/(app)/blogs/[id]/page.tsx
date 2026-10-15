@@ -1,349 +1,292 @@
 "use client";
-import React, { useEffect, useState } from "react";
-import { doc, getDoc, getDocs, addDoc, collection, updateDoc, Timestamp, serverTimestamp } from "firebase/firestore";
-import { db, useAuth } from "@/lib/firebase";
-import { useParams, useRouter } from "next/navigation";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, MessageSquare, Download, Pencil, Eye, EyeOff, Reply, Send, X } from "lucide-react";
-import type { BlogPost, Comment } from "@nablis/shared/firebase";
+import { useParams, useRouter } from "next/navigation";
+import {
+  doc, getDoc, onSnapshot, addDoc, collection, updateDoc, arrayUnion, Timestamp, serverTimestamp, query, orderBy,
+} from "firebase/firestore";
+import {
+  ArrowLeft, CalendarDays, Download, Eye, Reply, Ban, Undo2, Pencil, ChevronDown, Send, ExternalLink, MessageSquare,
+} from "lucide-react";
+import {
+  db, useAuth, countBlogView, youTubeEmbed, blogExcerpt, type BlogDoc,
+} from "@/lib/firebase";
+import { useToast } from "@/components/ui/Toast";
+import { useTranslation } from "@nablis/i18n";
+import i18n from "@nablis/i18n";
+import { dateLocale } from "@/lib/locale";
 
-function fmtAgo(ts: Timestamp | null | undefined) {
-  if (!ts) return "";
-  try {
-    const d = Date.now() - ts.toDate().getTime();
-    const mins  = Math.floor(d / 60000);
-    const hours = Math.floor(mins / 60);
-    const days  = Math.floor(hours / 24);
-    if (days  > 0) return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
-    return `${mins || 1}m ago`;
-  } catch { return ""; }
-}
-function fmtDate(ts: Timestamp | null | undefined) {
-  if (!ts) return "";
-  try { return ts.toDate().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }); }
-  catch { return ""; }
-}
-
-interface ExtComment extends Comment {
+interface CommentReply { authorName: string; content: string; createdAt: Timestamp }
+interface CommentDoc {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorPhotoURL?: string | null;
+  content: string;
+  createdAt?: Timestamp;
   hidden?: boolean;
-  replies?: { authorName: string; content: string; createdAt: Timestamp }[];
+  replies?: CommentReply[];
+  legacy?: boolean;
 }
 
-// ── Comment item ──────────────────────────────────────────────────────────────
-function CommentItem({
-  comment,
-  onHide,
-  onUnhide,
-  onReply,
-}: {
-  comment: ExtComment;
-  onHide: (id: string) => void;
-  onUnhide: (id: string) => void;
-  onReply: (id: string) => void;
-}) {
-  const initials = (comment.authorName || "?")[0].toUpperCase();
-  return (
-    <div className={[
-      "p-4 rounded-xl transition-colors",
-      comment.hidden ? "bg-[#F9FAFB] border border-dashed border-[#E5E7EB] opacity-60" : "bg-white border border-[#E5E7EB]",
-    ].join(" ")}>
-      <div className="flex items-start gap-3">
-        <div className="w-8 h-8 rounded-full bg-[#EEF1F8] flex items-center justify-center text-xs font-bold text-[#1B2E6B] flex-shrink-0">
-          {initials}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[#374151] font-semibold text-xs">{comment.authorName}</span>
-            <span className="text-[#9CA3AF] text-[10px]">{fmtAgo(comment.createdAt)}</span>
-            {comment.hidden && (
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-gray-100 text-gray-500 uppercase">HIDDEN</span>
-            )}
-          </div>
-          <p className="text-[#6B7280] text-sm leading-relaxed">{comment.content}</p>
+const PAGE = 5;
 
-          {/* Replies */}
-          {(comment.replies ?? []).map((r, i) => (
-            <div key={i} className="mt-3 pl-3 border-l-2 border-[#F5C518]">
-              <p className="text-[#1B2E6B] font-semibold text-[10px] mb-0.5">Admin Reply</p>
-              <p className="text-[#374151] text-xs">{r.content}</p>
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <button onClick={() => onReply(comment.id)}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[#EEF1F8] text-[#6B7280] text-[10px] font-medium transition-colors">
-            <Reply size={11} /> Reply
-          </button>
-          {comment.hidden ? (
-            <button onClick={() => onUnhide(comment.id)}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[#EEF1F8] text-[#1B2E6B] text-[10px] font-medium transition-colors">
-              <Eye size={11} /> Unhide
-            </button>
-          ) : (
-            <button onClick={() => onHide(comment.id)}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-50 text-red-400 text-[10px] font-medium transition-colors">
-              <EyeOff size={11} /> Hide
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+function ago(ts?: Timestamp | null) {
+  const d = ts?.toDate?.();
+  if (!d) return "";
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 60) return i18n.t("time.minsAgo", { count: Math.max(mins, 1) });
+  const h = Math.floor(mins / 60);
+  if (h < 24) return i18n.t("time.hoursAgo", { count: h });
+  const days = Math.floor(h / 24);
+  return days === 1 ? i18n.t("time.yesterday") : d.toLocaleDateString(dateLocale(), { month: "short", day: "numeric", year: "numeric" });
 }
 
-// ── Page ─────────────────────────────────────────────────────────────────────
 export default function BlogDetailPage() {
-  const { id }   = useParams<{ id: string }>();
-  const router   = useRouter();
+  const { t } = useTranslation();
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const { user, role } = useAuth();
-  const [post, setPost]               = useState<BlogPost | null>(null);
-  const [comments, setComments]       = useState<ExtComment[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [disableComments, setDisableComments] = useState(false);
-  const [replyingTo, setReplyingTo]   = useState<string | null>(null);
-  const [replyText, setReplyText]     = useState("");
-  const [postingReply, setPostingReply] = useState(false);
-  const [saving, setSaving]           = useState(false);
-  const [newComment, setNewComment]   = useState("");
-  const [postingComment, setPostingComment] = useState(false);
+  const isStaff = role === "admin" || role === "super_admin";
+  const toast = useToast();
+  const [post, setPost]         = useState<BlogDoc | null>(null);
+  const [missing, setMissing]   = useState(false);
+  const [legacy, setLegacy]     = useState<CommentDoc[]>([]);
+  const [comments, setComments] = useState<CommentDoc[]>([]);
+  const [shown, setShown]       = useState(PAGE);
+  const [replyTo, setReplyTo]   = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [newComment, setNewComment] = useState("");
+  const [busy, setBusy]         = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
+  useEffect(() => onSnapshot(doc(db, "blogPosts", id), (s) => {
+    if (!s.exists()) { setMissing(true); return; }
+    const data = { id: s.id, ...s.data() } as BlogDoc & { comments?: CommentDoc[] };
+    setPost(data);
+    setLegacy((data.comments ?? []).map((c) => ({ ...c, legacy: true })));
+  }), [id]);
+
+  useEffect(() => onSnapshot(query(collection(db, "blogPosts", id, "comments"), orderBy("createdAt", "desc")), (snap) => {
+    setComments(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CommentDoc)));
+  }), [id]);
+
+  // One view per browser session.
   useEffect(() => {
-    if (!id) return;
-    getDoc(doc(db, "blogPosts", id))
-      .then((snap) => {
-        if (snap.exists()) {
-          const data = { id: snap.id, ...snap.data() } as BlogPost;
-          setPost(data);
-          setComments(data.comments ?? []);
-          setDisableComments(!((data as BlogPost & { enableComments?: boolean }).enableComments ?? true));
-        }
-      })
-      .finally(() => setLoading(false));
-    // Load subcollection comments
-    getDocs(collection(db, "blogPosts", id, "comments")).then((snap) => {
-      if (!snap.empty) {
-        const subComments = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ExtComment));
-        setComments((prev) => {
-          const existingIds = new Set(prev.map((c) => c.id));
-          const newOnes = subComments.filter((c) => !existingIds.has(c.id));
-          return [...prev, ...newOnes];
-        });
-      }
-    });
+    try {
+      const key = `viewed-blog-${id}`;
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch { /* storage unavailable */ }
+    countBlogView(id);
   }, [id]);
 
-  async function toggleComments(val: boolean) {
-    setDisableComments(val);
-    setSaving(true);
+  const all = useMemo(() => [...comments, ...legacy], [comments, legacy]);
+  const visible = isStaff ? all : all.filter((c) => !c.hidden);
+  const disabled = post?.enableComments === false;
+
+  if (missing) return <div className="py-16 text-center text-[#6B7280]">{t("blogPost.missing")}</div>;
+  if (!post || !user) return <div className="py-16"><div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" /></div>;
+
+  const published = (post.publishAt ?? post.createdAt)?.toDate?.();
+  const embed = youTubeEmbed(post.videoURL);
+
+  async function toggleComments() {
+    await updateDoc(doc(db, "blogPosts", id), { enableComments: disabled });
+    toast({ message: disabled ? t("blogPost.commentsOn") : t("blogPost.commentsOff") });
+  }
+
+  async function setHidden(c: CommentDoc, hidden: boolean) {
     try {
-      await updateDoc(doc(db, "blogPosts", id), { enableComments: !val });
-    } finally {
-      setSaving(false);
+      await updateDoc(doc(db, "blogPosts", id, "comments", c.id), { hidden });
+    } catch {
+      toast({ type: "error", message: t("blogPost.updateError") });
     }
   }
 
-  function hideComment(commentId: string) {
-    setComments((prev) => prev.map((c) => c.id === commentId ? { ...c, hidden: true } : c));
-  }
-  function unhideComment(commentId: string) {
-    setComments((prev) => prev.map((c) => c.id === commentId ? { ...c, hidden: false } : c));
-  }
-
-  async function postReply() {
-    if (!replyText.trim() || !replyingTo || !user) return;
-    setPostingReply(true);
+  async function postReply(c: CommentDoc) {
+    if (!replyText.trim() || !user) return;
+    setBusy(true);
     try {
-      const reply = {
-        authorName: user.displayName || user.email,
-        content: replyText.trim(),
-        createdAt: Timestamp.now(),
-      };
-      setComments((prev) => prev.map((c) =>
-        c.id === replyingTo
-          ? { ...c, replies: [...(c.replies ?? []), reply] }
-          : c
-      ));
-      setReplyText("");
-      setReplyingTo(null);
-    } finally {
-      setPostingReply(false);
-    }
+      await updateDoc(doc(db, "blogPosts", id, "comments", c.id), {
+        replies: arrayUnion({ authorName: user.displayName || user.email, content: replyText.trim(), createdAt: Timestamp.now() }),
+      });
+      setReplyText(""); setReplyTo(null);
+      toast({ message: t("blogPost.responsePosted") });
+    } catch {
+      toast({ type: "error", message: t("blogPost.responseError") });
+    } finally { setBusy(false); }
   }
 
   async function postComment() {
-    if (!newComment.trim() || !user || !id) return;
-    setPostingComment(true);
+    if (!newComment.trim() || !user) return;
+    setBusy(true);
     try {
-      const commentData: ExtComment = {
-        id: Date.now().toString(),
-        authorId: user.id,
-        authorName: user.displayName || user.email || "Member",
-        content: newComment.trim(),
-        createdAt: Timestamp.now(),
-      };
       await addDoc(collection(db, "blogPosts", id, "comments"), {
         authorId: user.id,
         authorName: user.displayName || user.email || "Member",
+        authorPhotoURL: user.photoURL ?? null,
         content: newComment.trim(),
         createdAt: serverTimestamp(),
       });
-      setComments((prev) => [...prev, commentData]);
       setNewComment("");
-    } finally {
-      setPostingComment(false);
-    }
+    } catch {
+      toast({ type: "error", message: t("blogPost.commentError") });
+    } finally { setBusy(false); }
   }
 
-  if (!user) return null;
-
-  if (loading) {
-    return <div className="py-16 text-center"><div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" /></div>;
+  function exportComments() {
+    const rows = [["Author", "Date", "Comment", "Hidden", "Replies"], ...all.map((c) => [
+      c.authorName, c.createdAt?.toDate?.().toISOString() ?? "", c.content, c.hidden ? "yes" : "no",
+      (c.replies ?? []).map((r) => `${r.authorName}: ${r.content}`).join(" | "),
+    ])];
+    const csv = rows.map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `comments-${post!.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.csv`; a.click();
+    URL.revokeObjectURL(url);
   }
-  if (!post) {
-    return <div className="py-16 text-center text-[#9CA3AF]"><p className="text-sm">Post not found.</p></div>;
-  }
-
-  const visibleComments = comments.filter((c) => !c.hidden);
-  const hiddenCount = comments.filter((c) => c.hidden).length;
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <button onClick={() => router.back()} className="p-2 rounded-xl hover:bg-[#EEF1F8] text-[#6B7280] transition-colors">
-          <ArrowLeft size={16} />
-        </button>
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-[#1B2E6B] line-clamp-1">{post.title}</h1>
-          <p className="text-[#9CA3AF] text-sm mt-0.5">{fmtDate(post.publishAt ?? post.createdAt)}</p>
-        </div>
-        <Link href={`/blogs/${id}/update`}
-          className="flex items-center gap-1.5 bg-[#EEF1F8] text-[#1B2E6B] font-semibold text-sm px-4 py-2 rounded-xl hover:bg-[#dde3f0] transition-colors">
-          <Pencil size={13} /> Edit
-        </Link>
+    <div className="max-w-[760px] mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <button onClick={() => router.back()} className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#1B2E6B] hover:underline"><ArrowLeft size={15} /> {t("common.back")}</button>
+        {isStaff && <Link href={`/blogs/${id}/update`} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white text-sm font-semibold text-[#1B2E6B] shadow-sm hover:shadow-md"><Pencil size={14} /> {t("blogPost.edit")}</Link>}
       </div>
 
-      {/* Post content */}
-      <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm overflow-hidden">
-        {post.imageURL && (
-          <div className="aspect-[16/6] overflow-hidden">
-            <img src={post.imageURL} alt={post.title} className="w-full h-full object-cover" />
-          </div>
+      {/* Summary */}
+      <div className="bg-white rounded-2xl shadow-sm p-5 flex gap-5">
+        {(post.imageURL) && <img src={post.imageURL} alt={post.imageAlt ?? ""} className="w-28 h-28 rounded-xl object-cover flex-shrink-0" />}
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 text-sm text-[#6B7280]"><CalendarDays size={13} /> {t("blogPost.published", { date: published?.toLocaleDateString(dateLocale(), { month: "long", day: "numeric", year: "numeric" }) ?? "" })}</p>
+          <p className="font-display text-2xl font-bold text-[#111827] mt-1 leading-tight">{post.title}</p>
+          <p className="text-sm text-[#6B7280] mt-2">{blogExcerpt(post, 180)}</p>
+          <p className="text-xs text-[#9CA3AF] mt-2">{t("blogPost.byline", { author: post.authorName, category: t(`blogCat.${post.category}`, { defaultValue: post.category }), views: post.views ?? 0 })}</p>
+        </div>
+      </div>
+
+      {/* Article */}
+      <article className="bg-white rounded-2xl shadow-sm p-7">
+        {embed && <iframe src={embed} title={post.title} className="w-full aspect-video rounded-xl mb-6" allowFullScreen />}
+        {!embed && post.videoURL && <video src={post.videoURL} controls className="w-full rounded-xl mb-6 bg-black max-h-[420px]" />}
+        <div className="text-[#374151] leading-8 text-[16px] whitespace-pre-wrap">{post.content}</div>
+        {post.destLink && (
+          <a href={post.destLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 mt-6 text-sm font-semibold text-[#1E3A8A] hover:underline">
+            {t("blogPost.learnMore")} <ExternalLink size={13} />
+          </a>
         )}
-        <div className="p-6">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#F5C518]/20 text-[#1B2E6B]">{post.category}</span>
-            {post.pinned && <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#1B2E6B] text-white">FEATURED</span>}
-          </div>
-          <h2 className="text-xl font-bold text-[#1B2E6B] mb-2">{post.title}</h2>
-          <p className="text-[#9CA3AF] text-xs mb-4">By {post.authorName} · {fmtDate(post.publishAt ?? post.createdAt)}</p>
-          <div className="prose prose-sm max-w-none text-[#374151]">
-            {post.content.split(/\n\n+/).map((para, i) => (
-              <p key={i} className="mb-4 leading-7">{para}</p>
-            ))}
-          </div>
-        </div>
-      </div>
+      </article>
 
-      {/* Comments section */}
-      <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#F3F4F6]">
-          <div className="flex items-center gap-3">
-            <h2 className="text-[#1B2E6B] font-semibold text-sm">Comments</h2>
-            <span className="text-xs text-[#9CA3AF]">
-              {comments.length} total · {hiddenCount} hidden
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-[#374151] font-medium">Disable Comments</span>
-              <button role="switch" aria-checked={disableComments}
-                onClick={() => toggleComments(!disableComments)}
-                disabled={saving}
-                className={`relative w-8 h-4 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${disableComments ? "bg-red-400" : "bg-[#D1D5DB]"}`}>
-                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${disableComments ? "translate-x-4" : "translate-x-0.5"}`} />
-              </button>
-            </div>
-            <button className="flex items-center gap-1.5 text-xs font-medium text-[#6B7280] hover:text-[#1B2E6B] transition-colors">
-              <Download size={13} /> Export
+      {/* Comments toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-4">
+          {isStaff && (
+            <button onClick={toggleComments} className="flex items-center gap-3 pl-4 pr-2 py-2 rounded-full bg-white text-sm text-[#111827] shadow-sm">
+              {t("blogPost.disableComments")}
+              <span className={`relative w-10 h-6 rounded-full transition-colors ${disabled ? "bg-[#1E3A8A]" : "bg-[#E5E7EB]"}`}>
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${disabled ? "translate-x-4" : ""}`} />
+              </span>
             </button>
-          </div>
+          )}
+          <span className="text-sm text-[#111827]"><strong>{visible.length}</strong> {t("blogPost.totalComments")}</span>
         </div>
-
-        <div className="p-5 space-y-3">
-          {comments.length === 0 ? (
-            <div className="py-8 text-center text-[#9CA3AF]">
-              <MessageSquare size={28} className="mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No comments yet.</p>
-            </div>
-          ) : (
-            comments.map((c) => (
-              <CommentItem
-                key={c.id}
-                comment={c}
-                onHide={hideComment}
-                onUnhide={unhideComment}
-                onReply={(cid) => { setReplyingTo(cid); setReplyText(""); }}
-              />
-            ))
-          )}
-
-          {/* Reply input */}
-          {replyingTo && (
-            <div className="flex items-start gap-3 pt-2 border-t border-[#F3F4F6]">
-              <div className="w-8 h-8 rounded-full bg-[#1B2E6B] flex items-center justify-center text-[#F5C518] font-bold text-xs flex-shrink-0">
-                {(user.displayName || user.email)[0].toUpperCase()}
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-[10px] text-[#9CA3AF]">
-                    Replying to comment by {comments.find((c) => c.id === replyingTo)?.authorName}
-                  </span>
-                  <button onClick={() => setReplyingTo(null)} className="text-[#9CA3AF] hover:text-[#6B7280]"><X size={12} /></button>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postReply(); } }}
-                    placeholder="Type your response…"
-                    className="flex-1 px-3 py-2 rounded-xl border border-[#E5E7EB] text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B]"
-                  />
-                  <button onClick={postReply} disabled={postingReply || !replyText.trim()}
-                    className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2 rounded-xl hover:bg-[#e6b800] disabled:opacity-60 transition-colors">
-                    <Send size={13} /> Post Response
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Member comment input */}
-          {!disableComments && (
-            <div className="flex items-start gap-3 pt-3 border-t border-[#F3F4F6] mt-3">
-              <div className="w-8 h-8 rounded-full bg-[#1B2E6B] flex items-center justify-center text-[#F5C518] font-bold text-xs flex-shrink-0">
-                {(user.displayName || user.email || "U")[0].toUpperCase()}
-              </div>
-              <div className="flex-1 flex gap-2">
-                <input
-                  type="text"
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postComment(); } }}
-                  placeholder="Write a comment…"
-                  className="flex-1 px-3 py-2 rounded-xl border border-[#E5E7EB] text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors"
-                />
-                <button onClick={postComment} disabled={postingComment || !newComment.trim()}
-                  className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2 rounded-xl hover:bg-[#e6b800] disabled:opacity-60 transition-colors flex-shrink-0">
-                  <Send size={13} /> Post
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        {isStaff && (
+          <button onClick={exportComments} disabled={all.length === 0}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#F5C518] text-[#1E3A8A] font-semibold shadow-[0_10px_24px_-12px_rgba(245,197,24,0.9)] hover:bg-[#e6b800] disabled:opacity-50">
+            <Download size={16} /> {t("blogPost.exportComments")}
+          </button>
+        )}
       </div>
+
+      {/* New comment */}
+      {disabled ? (
+        <p className="text-sm text-[#6B7280] bg-white rounded-2xl px-5 py-4 shadow-sm">{t("blogPost.commentsClosed")}</p>
+      ) : (
+        <div className="bg-white rounded-2xl shadow-sm p-4 flex items-start gap-3">
+          {user.photoURL ? <img src={user.photoURL} alt="" className="w-9 h-9 rounded-full object-cover" /> : <span className="w-9 h-9 rounded-full bg-[#1B2E6B] text-white text-sm font-bold flex items-center justify-center">{(user.displayName || "U")[0]}</span>}
+          <textarea value={newComment} onChange={(e) => setNewComment(e.target.value)} rows={2} placeholder={t("blogPost.commentPlaceholder")}
+            className="flex-1 resize-none bg-[#F8FAFC] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/15" />
+          <button onClick={postComment} disabled={busy || !newComment.trim()} className="self-end flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#1E3A8A] text-white text-sm font-semibold disabled:opacity-50">
+            <Send size={14} /> {t("blogPost.post")}
+          </button>
+        </div>
+      )}
+
+      {/* Comment list */}
+      <div className="space-y-4">
+        {visible.length === 0 && (
+          <div className="text-center text-[#9CA3AF] py-8"><MessageSquare size={28} className="mx-auto mb-2 opacity-30" /><p className="text-sm">{t("blogPost.noComments")}</p></div>
+        )}
+        {visible.slice(0, shown).map((c) => (
+          <div key={c.id} className={`rounded-2xl p-5 shadow-sm transition-colors animate-fade-up ${c.hidden ? "bg-[#EEF1F7]" : "bg-white"}`}>
+            <div className="flex gap-4">
+              {c.authorPhotoURL ? <img src={c.authorPhotoURL} alt="" className="w-11 h-11 rounded-full object-cover flex-shrink-0" /> : <span className="w-11 h-11 rounded-full bg-[#EEF1F8] text-[#1B2E6B] font-bold flex items-center justify-center flex-shrink-0">{(c.authorName || "?")[0]}</span>}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="flex items-center gap-2 font-semibold text-[#111827]">
+                    {c.authorName}
+                    {c.hidden && <span className="px-2 py-0.5 rounded bg-[#E5E7EB] text-[9px] font-bold tracking-wider text-[#6B7280]">{t("blogPost.hidden")}</span>}
+                  </p>
+                  <span className="text-xs text-[#9CA3AF] whitespace-nowrap">{ago(c.createdAt)}</span>
+                </div>
+                <p className={`mt-1.5 leading-relaxed ${c.hidden ? "text-[#6B7280] italic" : "text-[#374151]"} ${expanded === c.id ? "" : "line-clamp-4"}`}>
+                  {c.hidden ? `"${c.content}"` : c.content}
+                </p>
+
+                {(c.replies ?? []).map((r, i) => (
+                  <div key={i} className="mt-3 pl-3 border-l-2 border-[#F5C518]">
+                    <p className="text-[11px] font-semibold text-[#1B2E6B]">{t("blogPost.replied", { name: r.authorName })}</p>
+                    <p className="text-sm text-[#374151]">{r.content}</p>
+                  </div>
+                ))}
+
+                {(isStaff || c.content.length > 280) && (
+                  <div className="flex items-center gap-5 mt-3 text-sm font-medium">
+                    <button onClick={() => setExpanded(expanded === c.id ? null : c.id)} className="flex items-center gap-1.5 text-[#1E3A8A] hover:underline">
+                      <Eye size={15} /> {expanded === c.id ? t("blogPost.less") : t("common.view")}
+                    </button>
+                    {isStaff && !c.legacy && (
+                      <>
+                        {!c.hidden && (
+                          <button onClick={() => { setReplyTo(replyTo === c.id ? null : c.id); setReplyText(""); }}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${replyTo === c.id ? "bg-[#1E3A8A] text-white" : "text-[#1E3A8A] hover:underline"}`}>
+                            <Reply size={15} /> {t("blogPost.reply")}
+                          </button>
+                        )}
+                        {c.hidden
+                          ? <button onClick={() => setHidden(c, false)} className="flex items-center gap-1.5 text-[#1E3A8A] hover:underline"><Undo2 size={15} /> {t("blogPost.unhide")}</button>
+                          : <button onClick={() => setHidden(c, true)} className="flex items-center gap-1.5 text-[#E11D48] hover:underline"><Ban size={15} /> {t("blogPost.hide")}</button>}
+                        {c.authorId && <Link href={`/settings/members/${c.authorId}`} className="text-[#6B7280] hover:underline">{t("settingsNav.profile")}</Link>}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {replyTo === c.id && (
+                  <div className="mt-4 pt-4 border-t border-[#F3F4F6] flex gap-3 animate-fade-up">
+                    {user.photoURL ? <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full object-cover" /> : <span className="w-8 h-8 rounded-full bg-[#14B8A6] text-white text-xs font-bold flex items-center justify-center">{(user.displayName || "U")[0]}</span>}
+                    <div className="flex-1 bg-[#F8FAFC] rounded-xl p-3">
+                      <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={2} autoFocus placeholder={t("blogPost.replyPlaceholder")}
+                        className="w-full resize-none bg-transparent text-sm focus:outline-none" />
+                      <div className="flex justify-end">
+                        <button onClick={() => postReply(c)} disabled={busy || !replyText.trim()} className="text-xs font-bold text-[#1E3A8A] hover:underline disabled:opacity-50">{t("blogPost.postResponse")}</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {visible.length > shown && (
+        <div className="flex justify-center">
+          <button onClick={() => setShown((n) => n + PAGE)} className="flex items-center gap-1.5 font-semibold text-[#1E3A8A] hover:underline">
+            View More Comments <ChevronDown size={16} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

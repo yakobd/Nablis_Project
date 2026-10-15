@@ -5,15 +5,17 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../lib/firebase';
+import { auth } from '../../lib/firebase';
 import { useRouter } from 'expo-router';
+import { FadeInView } from '../../components/FadeInView';
+import { themedStyles, themedColors } from "../../theme";
 
-const C = {
+const L = {
   navy: '#1B2E6B', yellow: '#F5C518', light: '#EEF1F8',
   grey: '#9CA3AF', dark: '#374151', border: '#E5E7EB',
   white: '#FFFFFF', bg: '#EEF1F8', red: '#DC2626',
 };
+const C = themedColors(L);
 
 export default function LoginScreen() {
   const router  = useRouter();
@@ -27,33 +29,11 @@ export default function LoginScreen() {
       Alert.alert('Error', 'Please enter your email and password.');
       return;
     }
-    console.log('Config check:', {
-      apiKey:    process.env.EXPO_PUBLIC_FIREBASE_API_KEY    ? 'SET' : 'MISSING',
-      projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ? 'SET' : 'MISSING',
-    });
     setLoading(true);
     try {
-      const cred = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
-
-      const snap = await getDoc(doc(db, 'users', cred.user.uid));
-      const status = snap.exists() ? snap.data().status : null;
-
-      if (status === 'rejected') {
-        const { signOut } = await import('firebase/auth');
-        await signOut(auth);
-        Alert.alert(
-          'Account Not Approved',
-          'Your registration was not approved. Please contact the Spiritual Father for more information.'
-        );
-        return;
-      }
-
-      if (status === 'pending') {
-        router.replace('/(auth)/pending' as any);
-        return;
-      }
-
-      router.replace('/(tabs)/home' as any);
+      await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+      // The auth gate in app/_layout.tsx routes to home / pending, or signs
+      // out rejected accounts.
     } catch (error: any) {
       const msg =
         error.code === 'auth/invalid-credential' ||
@@ -73,9 +53,13 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={[styles.inner, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
-        <Image source={require('../../../assets/Logo-Blue.png')} style={styles.logo} />
-        <Text style={styles.title}>Nablis Ministry</Text>
-        <Text style={styles.subtitle}>Sign in to your account</Text>
+        <FadeInView style={{ alignItems: 'center', alignSelf: 'stretch' }}>
+          <Image source={require('../../../assets/Logo-Blue.png')} style={styles.logo} />
+          <Text style={styles.title}>Nablis Ministry</Text>
+          <Text style={styles.subtitle}>Sign in to your account</Text>
+        </FadeInView>
+
+        <FadeInView delay={120} style={{ alignSelf: 'stretch' }}>
 
         <TextInput
           style={styles.input}
@@ -123,25 +107,26 @@ export default function LoginScreen() {
         <Text style={styles.registerNote}>
           New members require approval from the Spiritual Father
         </Text>
+        </FadeInView>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  root:           { flex: 1, backgroundColor: C.bg },
+const styles = themedStyles({
+  root:           { flex: 1, backgroundColor: L.bg },
   inner:          { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
   logo:           { width: 100, height: 100, resizeMode: 'contain', marginBottom: 8 },
-  title:          { fontSize: 28, fontWeight: '800', color: C.navy, marginBottom: 4 },
-  subtitle:       { fontSize: 15, color: C.grey, marginBottom: 32 },
-  input:          { width: '100%', maxWidth: 400, backgroundColor: C.white, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 13, marginBottom: 12, fontSize: 15, borderWidth: 1, borderColor: C.border, color: C.dark },
-  button:         { width: '100%', maxWidth: 400, backgroundColor: C.navy, borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 4 },
+  title:          { fontSize: 28, fontWeight: '800', color: L.navy, marginBottom: 4 },
+  subtitle:       { fontSize: 15, color: L.grey, marginBottom: 32 },
+  input:          { width: '100%', maxWidth: 400, backgroundColor: L.white, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 13, marginBottom: 12, fontSize: 15, borderWidth: 1, borderColor: L.border, color: L.dark },
+  button:         { width: '100%', maxWidth: 400, backgroundColor: L.navy, borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 4 },
   buttonDisabled: { opacity: 0.6 },
-  buttonText:     { color: C.white, fontSize: 16, fontWeight: '700' },
+  buttonText:     { color: L.white, fontSize: 16, fontWeight: '700' },
   divider:        { flexDirection: 'row', alignItems: 'center', width: '100%', maxWidth: 400, marginVertical: 20 },
-  dividerLine:    { flex: 1, height: 1, backgroundColor: C.border },
-  dividerText:    { marginHorizontal: 12, fontSize: 12, color: C.grey, fontWeight: '600' },
-  registerBtn:    { width: '100%', maxWidth: 400, backgroundColor: C.white, borderRadius: 12, paddingVertical: 15, alignItems: 'center', borderWidth: 1.5, borderColor: C.navy },
-  registerBtnText:{ color: C.navy, fontSize: 15, fontWeight: '700' },
-  registerNote:   { marginTop: 12, fontSize: 12, color: C.grey, textAlign: 'center' },
+  dividerLine:    { flex: 1, height: 1, backgroundColor: L.border },
+  dividerText:    { marginHorizontal: 12, fontSize: 12, color: L.grey, fontWeight: '600' },
+  registerBtn:    { width: '100%', maxWidth: 400, backgroundColor: L.white, borderRadius: 12, paddingVertical: 15, alignItems: 'center', borderWidth: 1.5, borderColor: L.navy },
+  registerBtnText:{ color: L.navy, fontSize: 15, fontWeight: '700' },
+  registerNote:   { marginTop: 12, fontSize: 12, color: L.grey, textAlign: 'center' },
 });

@@ -29,7 +29,9 @@
       "Bash(npm list *)",
       "Bash(git push *)",
       "Bash(npx next *)",
-      "PowerShell(Start-Sleep -Seconds 12; $f = \"C:\\\\Users\\\\Yakob\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Yakob-Desktop-Nablis-Project-Nablis-Project\\\\02c12074-e690-41f5-8aa7-247a537d2a69\\\\tasks\\\\bz9b80w2b.output\"; if \\(Test-Path $f\\) { \\(Get-Item $f\\).Length; Get-Content $f | Select-Object -First 50 } else { \"file not found\" })"
+      "PowerShell(Start-Sleep -Seconds 12; $f = \"C:\\\\Users\\\\Yakob\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Yakob-Desktop-Nablis-Project-Nablis-Project\\\\02c12074-e690-41f5-8aa7-247a537d2a69\\\\tasks\\\\bz9b80w2b.output\"; if \\(Test-Path $f\\) { \\(Get-Item $f\\).Length; Get-Content $f | Select-Object -First 50 } else { \"file not found\" })",
+      "Bash(ls \"/mnt/c/Users/Yakob/Desktop/Nablis Project/Nablis Project/apps/web/src/app/\\(app\\)/settings/\")",
+      "Read(//mnt/c/Users/Yakob/Desktop/Nablis Project/Nablis Project/apps/web/src/app/\\(app\\)/**)"
     ]
   }
 }

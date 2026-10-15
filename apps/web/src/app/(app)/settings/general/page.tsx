@@ -2,115 +2,111 @@
 import React, { useEffect, useState } from "react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db, useAuth } from "@/lib/firebase";
-import { CheckCircle, AlertCircle } from "lucide-react";
+import { useToast } from "@/components/ui/Toast";
+import { INPUT, SettingsPanel, SettingsRow } from "../_components/ui";
+import { useTranslation } from "@nablis/i18n";
 
-const INPUT = "w-full px-4 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors bg-white";
+const LINK_FIELDS = [
+  { key: "facebookUrl",  label: "Facebook",          placeholder: "https://facebook.com/…" },
+  { key: "youtubeUrl",   label: "YouTube",           placeholder: "https://youtube.com/@…" },
+  { key: "instagramUrl", label: "Instagram",         placeholder: "https://instagram.com/…" },
+  { key: "telegramUrl",  label: "Telegram",          placeholder: "https://t.me/…" },
+  { key: "playStoreUrl", label: "Google Play (app)", placeholder: "https://play.google.com/store/apps/details?id=com.nablis.app" },
+  { key: "appStoreUrl",  label: "App Store (app)",   placeholder: "https://apps.apple.com/…" },
+] as const;
+type LinkKey = (typeof LINK_FIELDS)[number]["key"];
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-6">
-      <h2 className="text-[#1B2E6B] font-semibold text-sm mb-5">{title}</h2>
-      {children}
-    </div>
-  );
-}
+type General = {
+  ministryName: string;
+  description: string;
+  contactEmail: string;
+  contactPhone: string;
+  address: string;
+} & Record<LinkKey, string>;
+
+const EMPTY: General = {
+  ministryName: "", description: "", contactEmail: "", contactPhone: "", address: "",
+  ...(Object.fromEntries(LINK_FIELDS.map((f) => [f.key, ""])) as Record<LinkKey, string>),
+};
 
 export default function GeneralSettingsPage() {
+  const { t } = useTranslation();
   const { role } = useAuth();
-  const [ministryName, setMinistryName] = useState("");
-  const [description, setDescription] = useState("");
-  const [contactEmail, setContactEmail] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
-  const [address, setAddress] = useState("");
+  const toast = useToast();
+  const [saved, setSaved] = useState<General>(EMPTY);
+  const [g, setG] = useState<General>(EMPTY);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   useEffect(() => {
     getDoc(doc(db, "settings", "general")).then((snap) => {
       if (!snap.exists()) return;
-      const d = snap.data();
-      setMinistryName(d.ministryName ?? "");
-      setDescription(d.description ?? "");
-      setContactEmail(d.contactEmail ?? "");
-      setContactPhone(d.contactPhone ?? "");
-      setAddress(d.address ?? "");
-    });
+      const data = snap.data();
+      const v = Object.fromEntries(Object.keys(EMPTY).map((k) => [k, typeof data[k] === "string" ? data[k] : ""])) as General;
+      setSaved(v);
+      setG(v);
+    }).catch(() => {});
   }, []);
 
+  if (role !== "super_admin") {
+    return <div className="bg-white rounded-3xl p-12 text-center text-sm text-[#6B7280]">{t("genSet.onlyAdmin")}</div>;
+  }
+
+  const dirty = JSON.stringify(g) !== JSON.stringify(saved);
+  const set = (k: keyof General) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setG((x) => ({ ...x, [k]: e.target.value }));
+
   async function save() {
+    const bad = LINK_FIELDS.find((f) => g[f.key].trim() && !/^https?:\/\//.test(g[f.key].trim()));
+    if (bad) { toast({ message: `${bad.label} must start with https://`, type: "error" }); return; }
     setSaving(true);
-    setMsg(null);
     try {
-      await setDoc(doc(db, "settings", "general"), {
-        ministryName: ministryName.trim(),
-        description: description.trim(),
-        contactEmail: contactEmail.trim(),
-        contactPhone: contactPhone.trim(),
-        address: address.trim(),
-      }, { merge: true });
-      setMsg({ type: "ok", text: "Settings saved successfully." });
+      const clean = Object.fromEntries(Object.entries(g).map(([k, v]) => [k, v.trim()])) as General;
+      await setDoc(doc(db, "settings", "general"), clean, { merge: true });
+      setSaved(clean);
+      setG(clean);
+      toast({ message: t("genSet.saved") });
     } catch {
-      setMsg({ type: "err", text: "Failed to save. Please try again." });
+      toast({ message: t("genSet.saveError"), type: "error" });
     } finally {
       setSaving(false);
     }
   }
 
-  if (role !== "super_admin") {
-    return <div className="py-16 text-center text-[#9CA3AF] text-sm">Only super admins can manage general settings.</div>;
-  }
-
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-[#1B2E6B]">General Settings</h1>
-        <p className="text-[#9CA3AF] text-sm mt-0.5">Configure your ministry&apos;s basic information</p>
-      </div>
-
-      <Section title="Ministry Information">
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Ministry Name</label>
-            <input value={ministryName} onChange={(e) => setMinistryName(e.target.value)} placeholder="e.g. Nablis Ministry" className={INPUT} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Description</label>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
-              placeholder="Brief description of your ministry…"
-              className={INPUT + " resize-none"} />
-          </div>
+    <SettingsPanel title={t("settingsNav.general")} onSave={save} onCancel={() => setG(saved)} saving={saving} dirty={dirty}>
+      <SettingsRow title={t("genSet.ministryInfo")} description={t("genSet.ministryInfoHint")}>
+        <div>
+          <label className="block text-sm text-[#111827] mb-2">{t("genSet.name")}</label>
+          <input value={g.ministryName} onChange={set("ministryName")} placeholder="e.g. Nablis Ministry" className={INPUT} />
         </div>
-      </Section>
-
-      <Section title="Contact Information">
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Contact Email</label>
-            <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="contact@example.com" className={INPUT} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Contact Phone</label>
-            <input type="tel" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="+1 234 567 8900" className={INPUT} />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Location / Address</label>
-            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Church address…" className={INPUT} />
-          </div>
+        <div>
+          <label className="block text-sm text-[#111827] mb-2">{t("planUpload.description")}</label>
+          <textarea value={g.description} onChange={set("description")} rows={3} placeholder={t("genSet.descPlaceholder")} className={INPUT + " resize-none"} />
         </div>
-      </Section>
+      </SettingsRow>
 
-      {msg && (
-        <div className={`flex items-center gap-2 text-sm px-4 py-3 rounded-xl ${msg.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
-          {msg.type === "ok" ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
-          {msg.text}
+      <SettingsRow title={t("genSet.contact")} description={t("genSet.contactHint")}>
+        <div>
+          <label className="block text-sm text-[#111827] mb-2">{t("genSet.email")}</label>
+          <input type="email" value={g.contactEmail} onChange={set("contactEmail")} placeholder="info@nablis.com" className={INPUT} />
         </div>
-      )}
+        <div>
+          <label className="block text-sm text-[#111827] mb-2">{t("genSet.phone")}</label>
+          <input type="tel" value={g.contactPhone} onChange={set("contactPhone")} placeholder="+971 56 498 3456" className={INPUT} />
+        </div>
+        <div>
+          <label className="block text-sm text-[#111827] mb-2">{t("genSet.address")}</label>
+          <input value={g.address} onChange={set("address")} placeholder={t("genSet.addressPlaceholder")} className={INPUT} />
+        </div>
+      </SettingsRow>
 
-      <button onClick={save} disabled={saving}
-        className="flex items-center gap-2 bg-[#1B2E6B] text-white font-semibold px-5 py-2.5 rounded-xl hover:bg-[#162554] transition-colors disabled:opacity-60 text-sm">
-        {saving && <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
-        Save Changes
-      </button>
-    </div>
+      <SettingsRow title={t("genSet.links")} description={t("genSet.linksHint")}>
+        {LINK_FIELDS.map((f) => (
+          <div key={f.key}>
+            <label className="block text-sm text-[#111827] mb-2">{f.label}</label>
+            <input type="url" value={g[f.key]} onChange={set(f.key)} placeholder={f.placeholder} className={INPUT} />
+          </div>
+        ))}
+      </SettingsRow>
+    </SettingsPanel>
   );
 }

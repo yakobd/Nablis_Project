@@ -1,203 +1,177 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { db, useAuth } from "@/lib/firebase";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle, AlertCircle } from "lucide-react";
-import type { User } from "@nablis/shared/firebase";
+import { doc, getDoc, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
+import { ArrowLeft } from "lucide-react";
+import { db, useAuth, type User } from "@/lib/firebase";
+import { useToast } from "@/components/ui/Toast";
+import { Field, INPUT, SettingsPanel } from "../../../_components/ui";
+import { MemberAvatar } from "../../_components/shared";
+import { useTranslation } from "@nablis/i18n";
 
-const INPUT = "w-full px-4 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors";
-const SELECT = "w-full px-4 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] bg-white focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors";
+interface Form {
+  displayName: string;
+  christianName: string;
+  phone: string;
+  gender: "" | "male" | "female";
+  birthday: string; // YYYY-MM-DD
+  address: string;
+  neighborhood: string;
+  city: string;
+  country: string;
+  zipCode: string;
+  parishChurch: string;
+  role: User["role"];
+  status: User["status"];
+}
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold text-[#374151] mb-1.5">
-        {label} {required && <span className="text-red-400">*</span>}
-      </label>
-      {children}
-    </div>
-  );
+function toForm(m: User): Form {
+  const b = m.birthday?.toDate?.();
+  return {
+    displayName: m.displayName ?? "",
+    christianName: m.christianName ?? "",
+    phone: m.phoneNumber || m.phone || "",
+    gender: m.gender ?? "",
+    birthday: b ? `${b.getFullYear()}-${String(b.getMonth() + 1).padStart(2, "0")}-${String(b.getDate()).padStart(2, "0")}` : "",
+    address: m.address ?? "",
+    neighborhood: m.neighborhood ?? "",
+    city: m.cityOfResidence || m.city || "",
+    country: m.countryOfResidence ?? "",
+    zipCode: m.zipCode ?? "",
+    parishChurch: m.parishChurch ?? "",
+    role: m.role,
+    status: m.status,
+  };
 }
 
 export default function EditMemberPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
-  const router  = useRouter();
-  const { role: currentUserRole } = useAuth();
-
-  const [member, setMember]         = useState<User | null>(null);
-  const [loading, setLoading]       = useState(true);
-  const [saving, setSaving]         = useState(false);
-  const [msg, setMsg]               = useState<{ type: "ok" | "err"; text: string } | null>(null);
-
-  // Form state
-  const [displayName, setDisplayName] = useState("");
-  const [email, setEmail]             = useState("");
-  const [phone, setPhone]             = useState("");
-  const [address, setAddress]         = useState("");
-  const [city, setCity]               = useState("");
-  const [zip, setZip]                 = useState("");
-  const [role, setRole]               = useState<"super_admin" | "admin" | "member">("member");
-  const [status, setStatus]           = useState<"active" | "pending" | "rejected" | "suspended">("pending");
+  const router = useRouter();
+  const toast = useToast();
+  const { user, role } = useAuth();
+  const isSuperAdmin = role === "super_admin";
+  const [member, setMember] = useState<User | null>(null);
+  const [saved, setSaved] = useState<Form | null>(null);
+  const [f, setF] = useState<Form | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const snap = await getDoc(doc(db, "users", id));
-        if (snap.exists()) {
-          const m = { id: snap.id, ...snap.data() } as User;
-          setMember(m);
-          setDisplayName(m.displayName ?? "");
-          setEmail(m.email ?? "");
-          setPhone(m.phone ?? "");
-          setAddress(m.address ?? "");
-          setCity(m.city ?? "");
-          setZip(m.zipCode ?? "");
-          setRole(m.role ?? "member");
-          setStatus(m.status ?? "pending");
-        }
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
+    getDoc(doc(db, "users", id)).then((snap) => {
+      if (!snap.exists()) return;
+      const m = { id: snap.id, ...snap.data() } as User;
+      setMember(m);
+      setSaved(toForm(m));
+      setF(toForm(m));
+    }).catch(() => {}).finally(() => setLoading(false));
   }, [id]);
 
-  async function handleSave() {
-    if (!member) return;
+  if (!user) return null;
+  if (loading) return <div className="bg-white rounded-3xl py-20"><div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" /></div>;
+  if (!member || !f || !saved) return <div className="bg-white rounded-3xl p-12 text-center text-sm text-[#6B7280]">{t("memberEdit.notFound")}</div>;
+  // Admins may edit regular members only (see firestore.rules).
+  if (!isSuperAdmin && member.role !== "member") {
+    return <div className="bg-white rounded-3xl p-12 text-center text-sm text-[#6B7280]">{t("memberEdit.onlyFather")}</div>;
+  }
+
+  const form = f;
+  const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...form, [k]: e.target.value } as Form);
+  const dirty = JSON.stringify(f) !== JSON.stringify(saved);
+  const isSelf = member.id === user.id;
+
+  async function save() {
+    if (!form.displayName.trim()) { toast({ message: t("memberEdit.needName"), type: "error" }); return; }
     setSaving(true);
-    setMsg(null);
     try {
-      const updates: Partial<User> = {
-        displayName: displayName.trim(),
-        phone: phone.trim(),
-        address: address.trim(),
-        city: city.trim(),
-        zipCode: zip.trim(),
+      const updates: Record<string, unknown> = {
+        displayName: form.displayName.trim(),
+        christianName: form.christianName.trim(),
+        phone: form.phone.trim(),
+        phoneNumber: form.phone.trim(),
+        gender: form.gender || null,
+        birthday: form.birthday ? Timestamp.fromDate(new Date(`${form.birthday}T12:00:00`)) : null,
+        address: form.address.trim(),
+        neighborhood: form.neighborhood.trim(),
+        cityOfResidence: form.city.trim(),
+        countryOfResidence: form.country.trim(),
+        zipCode: form.zipCode.trim(),
+        parishChurch: form.parishChurch.trim(),
+        updatedAt: serverTimestamp(),
       };
-      if (currentUserRole === "admin") {
-        updates.role = role;
-        updates.status = status;
+      if (isSuperAdmin && !isSelf) {
+        updates.role = form.role;
+        updates.status = form.status;
       }
-      await updateDoc(doc(db, "users", id), updates);
-      setMsg({ type: "ok", text: "Member updated successfully." });
+      await updateDoc(doc(db, "users", member!.id), updates);
+      setSaved(form);
+      toast({ message: t("memberEdit.updated"), linkLabel: t("members.viewProfile"), onLink: () => router.push(`/settings/members/${member!.id}`) });
     } catch {
-      setMsg({ type: "err", text: "Failed to save changes. Please try again." });
+      toast({ message: t("memberEdit.saveError"), type: "error" });
     } finally {
       setSaving(false);
     }
   }
 
-  if (loading) {
-    return (
-      <div className="py-16 text-center">
-        <div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" />
-      </div>
-    );
-  }
-
-  if (!member) {
-    return (
-      <div className="py-16 text-center text-[#9CA3AF]">
-        <p className="text-sm font-medium">Member not found</p>
-        <button onClick={() => router.back()} className="mt-3 text-xs text-[#1B2E6B] font-semibold hover:text-[#F5C518]">
-          Go back
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-5">
-      <button
-        onClick={() => router.back()}
-        className="inline-flex items-center gap-1.5 text-[#6B7280] hover:text-[#1B2E6B] text-sm transition-colors"
-      >
-        <ArrowLeft size={14} /> Back
+    <div className="space-y-4">
+      <button onClick={() => router.push(`/settings/members/${member.id}`)} className="flex items-center gap-1.5 text-sm font-semibold text-[#1E3A8A]">
+        <ArrowLeft size={16} /> {t("memberEdit.back")}
       </button>
-
-      <div>
-        <h1 className="text-xl font-bold text-[#1B2E6B]">Edit Member</h1>
-        <p className="text-[#9CA3AF] text-sm mt-0.5">
-          Editing: <span className="font-medium text-[#374151]">{member.displayName || member.email}</span>
-        </p>
-      </div>
-
-      {/* Personal info */}
-      <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-6">
-        <h2 className="text-[#1B2E6B] font-semibold text-sm mb-5">Personal Information</h2>
-        <div className="grid sm:grid-cols-2 gap-4">
-          <Field label="Full Name" required>
-            <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Full name" className={INPUT} />
-          </Field>
-          <Field label="Email Address">
-            <input type="email" value={email} disabled className={`${INPUT} bg-[#F9FAFB] cursor-not-allowed text-[#9CA3AF]`} />
-          </Field>
-          <Field label="Phone Number">
-            <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+971 5X XXX XXXX" className={INPUT} />
-          </Field>
-          <Field label="City">
-            <input type="text" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Dubai" className={INPUT} />
-          </Field>
-          <Field label="Address">
-            <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street address" className={INPUT} />
-          </Field>
-          <Field label="ZIP / Postal Code">
-            <input type="text" value={zip} onChange={(e) => setZip(e.target.value)} placeholder="00000" className={INPUT} />
-          </Field>
+      <SettingsPanel title={t("memberEdit.title")} onSave={save} onCancel={() => setF(saved)} saving={saving} dirty={dirty}>
+        <div className="flex items-center gap-4 pb-8 border-b border-[#F3F4F6]">
+          <MemberAvatar m={member} size={64} />
+          <div className="min-w-0">
+            <p className="text-lg font-semibold text-[#111827] truncate">{member.displayName || "Unnamed"}</p>
+            <p className="text-sm text-[#6B7280] truncate">{member.email}</p>
+          </div>
         </div>
-      </div>
 
-      {/* Access control — admin only */}
-      {currentUserRole === "admin" && (
-        <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-6">
-          <h2 className="text-[#1B2E6B] font-semibold text-sm mb-5">Access & Status</h2>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <Field label="Role">
-              <select value={role} onChange={(e) => setRole(e.target.value as "admin" | "member")} className={SELECT}>
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
+        <div className="grid sm:grid-cols-2 gap-6 py-8 border-b border-[#F3F4F6]">
+          <Field label={t("memberEdit.fullName")}><input value={f.displayName} onChange={set("displayName")} className={INPUT} /></Field>
+          <Field label={t("memberInfo.christianName")}><input value={f.christianName} onChange={set("christianName")} className={INPUT} /></Field>
+          <Field label={t("memberEdit.email")} hint={t("memberEdit.emailHint")}><input value={member.email} disabled className={INPUT} /></Field>
+          <Field label={t("memberInfo.phone")}><input value={f.phone} onChange={set("phone")} type="tel" className={INPUT} /></Field>
+          <Field label={t("memberInfo.gender")}>
+            <select value={f.gender} onChange={set("gender")} className={INPUT + " cursor-pointer"}>
+              <option value="">{t("memberEdit.notSpecified")}</option>
+              <option value="female">{t("memberInfo.gender_female")}</option>
+              <option value="male">{t("memberInfo.gender_male")}</option>
+            </select>
+          </Field>
+          <Field label={t("memberInfo.birthday")}><input type="date" value={f.birthday} onChange={set("birthday")} max={new Date().toISOString().slice(0, 10)} className={INPUT} /></Field>
+          <Field label={t("memberInfo.street")}><input value={f.address} onChange={set("address")} className={INPUT} /></Field>
+          <Field label={t("memberEdit.neighborhood")}><input value={f.neighborhood} onChange={set("neighborhood")} className={INPUT} /></Field>
+          <Field label={t("memberInfo.city")}><input value={f.city} onChange={set("city")} className={INPUT} /></Field>
+          <Field label={t("memberInfo.country")}><input value={f.country} onChange={set("country")} className={INPUT} /></Field>
+          <Field label={t("memberInfo.zip")}><input value={f.zipCode} onChange={set("zipCode")} className={INPUT} /></Field>
+          <Field label={t("memberInfo.parish")}><input value={f.parishChurch} onChange={set("parishChurch")} className={INPUT} /></Field>
+        </div>
+
+        {isSuperAdmin && !isSelf && (
+          <div className="grid sm:grid-cols-2 gap-6 pt-8">
+            <div className="sm:col-span-2">
+              <p className="text-lg text-[#111827]">{t("members.access")}</p>
+              <p className="text-sm text-[#6B7280] mt-0.5">{t("memberEdit.accessHint")}</p>
+            </div>
+            <Field label={t("memberEdit.role")}>
+              <select value={f.role} onChange={set("role")} className={INPUT + " cursor-pointer"}>
+                <option value="member">{t("status.member")}</option>
+                <option value="admin">{t("members.admin")}</option>
+                {saved.role === "super_admin" && <option value="super_admin">{t("members.father")}</option>}
               </select>
             </Field>
-            <Field label="Status">
-              <select value={status} onChange={(e) => setStatus(e.target.value as "active" | "pending" | "rejected")} className={SELECT}>
-                <option value="active">Active</option>
-                <option value="pending">Pending</option>
-                <option value="rejected">Rejected</option>
+            <Field label={t("study.status")}>
+              <select value={f.status} onChange={set("status")} className={INPUT + " cursor-pointer"}>
+                <option value="active">{t("groups.filter.active")}</option>
+                <option value="pending">{t("memberEdit.pending")}</option>
+                <option value="suspended">{t("memberEdit.suspended")}</option>
+                <option value="rejected">{t("memberEdit.rejected")}</option>
               </select>
             </Field>
           </div>
-        </div>
-      )}
-
-      {msg && (
-        <div
-          className={`flex items-center gap-2 text-sm px-4 py-3 rounded-xl ${
-            msg.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
-          }`}
-        >
-          {msg.type === "ok" ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
-          {msg.text}
-        </div>
-      )}
-
-      <div className="flex gap-3">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="flex items-center gap-2 bg-[#1B2E6B] text-white font-semibold px-5 py-2.5 rounded-xl hover:bg-[#162554] transition-colors disabled:opacity-60 text-sm"
-        >
-          {saving && <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
-          Save Changes
-        </button>
-        <button
-          onClick={() => router.back()}
-          className="px-5 py-2.5 rounded-xl border border-[#E5E7EB] text-sm font-semibold text-[#374151] hover:bg-[#EEF1F8] transition-colors"
-        >
-          Cancel
-        </button>
-      </div>
+        )}
+      </SettingsPanel>
     </div>
   );
 }

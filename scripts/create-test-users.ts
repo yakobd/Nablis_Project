@@ -4,22 +4,23 @@
  * Creates 8 accounts in Firebase Auth + Firestore:
  *
  *   SUPER ADMIN (1):
- *     superadmin@nablis.com / Nablis2024!  → role: super_admin  (መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር))
+ *     superadmin@nablis.com → role: super_admin  (መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር))
  *
  *   ADMINS (2):
- *     admin1@nablis.com / Nablis2024!      → role: admin  (Abenezer)
- *     admin2@nablis.com / Nablis2024!      → role: admin  (Biniyam)
+ *     admin1@nablis.com     → role: admin  (Abenezer)
+ *     admin2@nablis.com     → role: admin  (Biniyam)
  *
  *   ACTIVE MEMBERS (3):
- *     member1@nablis.com / Nablis2024!     → role: member, status: active (Mekdes Abebe)
- *     member2@nablis.com / Nablis2024!     → role: member, status: active (Sara Tefera)
- *     member3@nablis.com / Nablis2024!     → role: member, status: active (Dawit Haile)
+ *     member1@nablis.com    → role: member, status: active (Mekdes Abebe)
+ *     member2@nablis.com    → role: member, status: active (Sara Tefera)
+ *     member3@nablis.com    → role: member, status: active (Dawit Haile)
  *
  *   PENDING MEMBERS (2):
- *     pending1@nablis.com / Nablis2024!    → role: member, status: pending (Tigist Bekele)
- *     pending2@nablis.com / Nablis2024!    → role: member, status: pending (Yonas Girma)
+ *     pending1@nablis.com   → role: member, status: pending (Tigist Bekele)
+ *     pending2@nablis.com   → role: member, status: pending (Yonas Girma)
  *
  * SETUP (one-time):
+ *   0. Set TEST_USER_PASSWORD in .env.local (shared password for all test accounts)
  *   1. Firebase Console → Project Settings → Service Accounts → Generate new private key
  *      Save as scripts/service-account.json, OR set the FIREBASE_ADMIN_* env vars in .env.local
  *
@@ -70,6 +71,12 @@ if (!getApps().length) {
 
 const db     = getFirestore();
 const fbAuth = getAuth();
+
+const TEST_PASSWORD = process.env.TEST_USER_PASSWORD ?? '';
+if (TEST_PASSWORD.length < 8) {
+  console.error('\n❌  Set TEST_USER_PASSWORD (min 8 chars) in .env.local before running.\n');
+  process.exit(1);
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -145,7 +152,7 @@ async function main() {
   await upsertUser({
     uid:                'nablis-superadmin',
     email:              'superadmin@nablis.com',
-    password:           'Nablis2024!',
+    password:           TEST_PASSWORD,
     displayName:        'መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)',
     role:               'super_admin',
     status:             'active',
@@ -162,7 +169,7 @@ async function main() {
   await upsertUser({
     uid:                'nablis-admin1',
     email:              'admin1@nablis.com',
-    password:           'Nablis2024!',
+    password:           TEST_PASSWORD,
     displayName:        'Abenezer',
     role:               'admin',
     status:             'active',
@@ -177,7 +184,7 @@ async function main() {
   await upsertUser({
     uid:                'nablis-admin2',
     email:              'admin2@nablis.com',
-    password:           'Nablis2024!',
+    password:           TEST_PASSWORD,
     displayName:        'Biniyam',
     role:               'admin',
     status:             'active',
@@ -194,7 +201,7 @@ async function main() {
   await upsertUser({
     uid:                'nablis-member1',
     email:              'member1@nablis.com',
-    password:           'Nablis2024!',
+    password:           TEST_PASSWORD,
     displayName:        'Mekdes Abebe',
     role:               'member',
     status:             'active',
@@ -209,7 +216,7 @@ async function main() {
   await upsertUser({
     uid:                'nablis-member2',
     email:              'member2@nablis.com',
-    password:           'Nablis2024!',
+    password:           TEST_PASSWORD,
     displayName:        'Sara Tefera',
     role:               'member',
     status:             'active',
@@ -224,7 +231,7 @@ async function main() {
   await upsertUser({
     uid:                'nablis-member3',
     email:              'member3@nablis.com',
-    password:           'Nablis2024!',
+    password:           TEST_PASSWORD,
     displayName:        'Dawit Haile',
     role:               'member',
     status:             'active',
@@ -241,7 +248,7 @@ async function main() {
   await upsertUser({
     uid:                'nablis-pending1',
     email:              'pending1@nablis.com',
-    password:           'Nablis2024!',
+    password:           TEST_PASSWORD,
     displayName:        'Tigist Bekele',
     role:               'member',
     status:             'pending',
@@ -256,7 +263,7 @@ async function main() {
   await upsertUser({
     uid:                'nablis-pending2',
     email:              'pending2@nablis.com',
-    password:           'Nablis2024!',
+    password:           TEST_PASSWORD,
     displayName:        'Yonas Girma',
     role:               'member',
     status:             'pending',
@@ -271,17 +278,17 @@ async function main() {
   // ── Summary ──────────────────────────────────────────────────────────────────
   console.log('\n✅  Done! Created 8 test users:\n');
   console.log('  SUPER ADMIN:');
-  console.log('    superadmin@nablis.com  / Nablis2024!   (መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር))');
+  console.log('    superadmin@nablis.com   (መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር))');
   console.log('\n  ADMINS:');
-  console.log('    admin1@nablis.com      / Nablis2024!   (Abenezer)');
-  console.log('    admin2@nablis.com      / Nablis2024!   (Biniyam)');
+  console.log('    admin1@nablis.com       (Abenezer)');
+  console.log('    admin2@nablis.com       (Biniyam)');
   console.log('\n  ACTIVE MEMBERS:');
-  console.log('    member1@nablis.com     / Nablis2024!   (Mekdes Abebe)');
-  console.log('    member2@nablis.com     / Nablis2024!   (Sara Tefera)');
-  console.log('    member3@nablis.com     / Nablis2024!   (Dawit Haile)');
+  console.log('    member1@nablis.com      (Mekdes Abebe)');
+  console.log('    member2@nablis.com      (Sara Tefera)');
+  console.log('    member3@nablis.com      (Dawit Haile)');
   console.log('\n  PENDING MEMBERS:');
-  console.log('    pending1@nablis.com    / Nablis2024!   (Tigist Bekele)');
-  console.log('    pending2@nablis.com    / Nablis2024!   (Yonas Girma)\n');
+  console.log('    pending1@nablis.com     (Tigist Bekele)');
+  console.log('    pending2@nablis.com     (Yonas Girma)\n');
 
   process.exit(0);
 }

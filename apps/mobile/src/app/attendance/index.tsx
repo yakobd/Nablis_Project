@@ -1,362 +1,387 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
+  ActivityIndicator, Alert, Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  collection, query, orderBy, getDocs, addDoc, serverTimestamp, Timestamp, where,
+  collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, where, Timestamp,
 } from "firebase/firestore";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import { db } from '../../lib/firebase';
-import { useAuth } from '@nablis/shared/firebase';
+import { useAuth, checkIn, parseCheckInQR, attendanceSummary, type Attendance, type CheckIn } from '@nablis/shared/firebase';
+import Svg, { Circle } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { Avatar } from "../../components/Avatar";
+import { themedStyles, themedColors } from "../../theme";
+import i18n from "@nablis/i18n";
 
-const C = {
+const L = {
   navy: "#1B2E6B", yellow: "#F5C518", light: "#EEF1F8",
   grey: "#9CA3AF", dark:   "#374151", border: "#E5E7EB",
-  white: "#FFFFFF", bg:    "#F9FAFB",
+  white: "#FFFFFF", bg:    "#F9FAFB", green: "#16A34A",
 };
+const C = themedColors(L);
 
-interface AttendanceRecord {
-  id: string;
-  meetingTitle: string;
-  date?: Timestamp;
-  status: string;
-  totalCapacity?: number;
-}
-
-interface CheckIn {
-  id: string;
-  userId: string;
-  displayName: string;
-  checkedInAt?: Timestamp;
-}
-
-function fmtDate(ts?: Timestamp) {
+function fmtDate(ts?: Timestamp | null) {
   if (!ts) return "—";
   try { return ts.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
   catch { return "—"; }
 }
-
-function fmtTime(ts?: Timestamp) {
+function fmtTime(ts?: Timestamp | null) {
   if (!ts) return "";
-  try { return ts.toDate().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }); }
+  try { return ts.toDate().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }); }
   catch { return ""; }
 }
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { bg: string; text: string }> = {
-    completed: { bg: "#DCFCE7", text: "#16A34A" },
-    active:    { bg: "#DBEAFE", text: "#1D4ED8" },
+    completed: { bg: "#F3F4F6", text: "#6B7280" },
+    active:    { bg: "#DCFCE7", text: "#16A34A" },
     upcoming:  { bg: "#FEF9C3", text: "#92400E" },
   };
-  const s = map[status] ?? { bg: "#F3F4F6", text: "#6B7280" };
+  const s = map[status] ?? map.completed;
   return (
     <View style={[styles.badge, { backgroundColor: s.bg }]}>
-      <Text style={[styles.badgeTxt, { color: s.text }]}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Text>
+      <Text style={[styles.badgeTxt, { color: s.text }]}>{status.charAt(0).toUpperCase() + status.slice(1)}</Text>
     </View>
   );
 }
 
-function QRPlaceholder() {
-  const cells = Array.from({ length: 64 }, (_, i) => {
-    const row = Math.floor(i / 8);
-    const col = i % 8;
-    return row === 0 || row === 7 || col === 0 || col === 7 ||
-      (row > 1 && row < 6 && col > 1 && col < 6 && (i % 3 === 0));
-  });
-  return (
-    <View style={styles.qrGrid}>
-      {cells.map((on, i) => (
-        <View key={i} style={[styles.qrCell, on && styles.qrCellOn]} />
-      ))}
-    </View>
-  );
+function useSessions() {
+  const [sessions, setSessions] = useState<Attendance[]>([]);
+  const [loading, setLoading]   = useState(true);
+  useEffect(() => onSnapshot(
+    query(collection(db, "attendance"), orderBy("date", "desc")),
+    (snap) => { setSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Attendance))); setLoading(false); },
+    () => setLoading(false)
+  ), []);
+  return { sessions, loading };
 }
 
-// ─── Admin Attendance ─────────────────────────────────────────────────────────
-function AdminAttendance() {
-  const insets  = useSafeAreaInsets();
-  const router  = useRouter();
-  const [checkIns, setCheckIns]   = useState<CheckIn[]>([]);
-  const [sessions, setSessions]   = useState<AttendanceRecord[]>([]);
-  const [loading, setLoading]     = useState(true);
+// ─── QR scanner ───────────────────────────────────────────────────────────────
+function Scanner({ visible, onClose, onScanned }: {
+  visible: boolean;
+  onClose: () => void;
+  onScanned: (sessionId: string, code: string) => void;
+}) {
+  const [permission, requestPermission] = useCameraPermissions();
+  const [handled, setHandled] = useState(false);
 
-  function todayStart() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
-  function todayEnd()   { const d = new Date(); d.setHours(23, 59, 59, 999); return d; }
-
-  async function load() {
-    setLoading(true);
-    try {
-      const [checkInsSnap, sessionsSnap] = await Promise.all([
-        getDocs(query(
-          collection(db, "checkIns"),
-          where("checkedInAt", ">=", Timestamp.fromDate(todayStart())),
-          where("checkedInAt", "<=", Timestamp.fromDate(todayEnd()))
-        )),
-        getDocs(query(collection(db, "attendance"), orderBy("date", "desc"))),
-      ]);
-      setCheckIns(checkInsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as CheckIn)));
-      setSessions(sessionsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as AttendanceRecord)));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (visible) setHandled(false); }, [visible]);
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={20} color={C.navy} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Attendance</Text>
-        <TouchableOpacity style={styles.refreshBtn} onPress={load}>
-          <Ionicons name="refresh" size={18} color={C.navy} />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNum}>{sessions.length}</Text>
-            <Text style={styles.statLabel}>Total Sessions</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statNum, { color: "#16A34A" }]}>{checkIns.length}</Text>
-            <Text style={styles.statLabel}>Today's Check-ins</Text>
-          </View>
-        </View>
-
-        {/* QR Code card */}
-        <View style={styles.qrCard}>
-          <Text style={styles.qrTitle}>Today's Session QR Code</Text>
-          <Text style={styles.qrSub}>Display this QR code for members to scan and check in</Text>
-          <QRPlaceholder />
-          <View style={styles.qrInfo}>
-            <Ionicons name="information-circle-outline" size={14} color={C.grey} />
-            <Text style={styles.qrInfoTxt}>Dynamic QR generation requires a camera module</Text>
-          </View>
-        </View>
-
-        {/* Today's check-ins */}
-        <Text style={styles.sectionTitle}>Today's Check-ins ({checkIns.length})</Text>
-        {loading ? (
-          <ActivityIndicator color={C.navy} style={{ marginTop: 20 }} />
-        ) : checkIns.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <Ionicons name="people-outline" size={36} color={C.grey} style={{ opacity: 0.3 }} />
-            <Text style={styles.emptyTxt}>No check-ins today yet.</Text>
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={styles.scannerRoot}>
+        {!permission ? (
+          <ActivityIndicator color={C.white} />
+        ) : !permission.granted ? (
+          <View style={styles.scannerMsg}>
+            <Text style={styles.scannerTxt}>Camera access is needed to scan the attendance QR code.</Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={requestPermission}>
+              <Text style={styles.primaryTxt}>Allow Camera</Text>
+            </TouchableOpacity>
           </View>
         ) : (
-          checkIns.map((c) => (
-            <View key={c.id} style={styles.checkInRow}>
-              <Avatar name={c.displayName} size={36} />
-              <View style={styles.checkInInfo}>
-                <Text style={styles.checkInName}>{c.displayName}</Text>
-                <Text style={styles.checkInTime}>{fmtTime(c.checkedInAt)}</Text>
-              </View>
-              <View style={styles.checkInBadge}>
-                <Ionicons name="checkmark-circle" size={16} color="#16A34A" />
-                <Text style={styles.checkInBadgeTxt}>Checked In</Text>
-              </View>
-            </View>
-          ))
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+            onBarcodeScanned={handled ? undefined : ({ data }) => {
+              const parsed = parseCheckInQR(data);
+              if (!parsed) return;
+              setHandled(true);
+              onScanned(parsed.sessionId, parsed.code);
+            }}
+          />
         )}
-
-        {/* Session history */}
-        {sessions.length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Session History</Text>
-            {sessions.map((a) => (
-              <View key={a.id} style={styles.recordCard}>
-                <View style={styles.recordLeft}>
-                  <Text style={styles.recordTitle}>{a.meetingTitle}</Text>
-                  <Text style={styles.recordDate}>{fmtDate(a.date)}</Text>
-                </View>
-                <StatusBadge status={a.status} />
-              </View>
-            ))}
-          </>
-        )}
-
-        <View style={{ height: 24 }} />
-      </ScrollView>
-    </View>
+        <View style={styles.scannerFrame} pointerEvents="none" />
+        <TouchableOpacity style={styles.scannerClose} onPress={onClose}>
+          <Ionicons name="close" size={26} color={C.white} />
+        </TouchableOpacity>
+        <Text style={styles.scannerHint}>Point the camera at the QR code shown at the meeting</Text>
+      </View>
+    </Modal>
   );
 }
 
-// ─── Member Attendance ────────────────────────────────────────────────────────
+// ─── Member view ──────────────────────────────────────────────────────────────
 function MemberAttendance() {
   const { user } = useAuth();
-  const insets   = useSafeAreaInsets();
-  const router   = useRouter();
-  const [history, setHistory]     = useState<AttendanceRecord[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [checkedIn, setCheckedIn] = useState(false);
-  const [checkingIn, setCheckingIn] = useState(false);
+  const { sessions, loading } = useSessions();
+  const [mine, setMine]       = useState<CheckIn[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [codes, setCodes]     = useState<Record<string, string>>({});
+  const [busy, setBusy]       = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
-    getDocs(query(collection(db, "attendance"), orderBy("date", "desc")))
-      .then((snap) => {
-        const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AttendanceRecord));
-        setHistory(all.filter((a) => (a as any).attendees?.some((at: any) => at.userId === user.id)));
-      })
-      .finally(() => setLoading(false));
+    return onSnapshot(query(collection(db, "checkIns"), where("userId", "==", user.id)), (snap) => {
+      setMine(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CheckIn)));
+    });
   }, [user]);
 
-  const attended = history.filter((a) => a.status === "completed").length;
-  const rate     = history.length > 0 ? Math.round((attended / history.length) * 100) : 0;
+  const attended = useMemo(() => new Set(mine.map((c) => c.sessionId)), [mine]);
+  const open = sessions.filter((s) => s.status === "active" && !attended.has(s.id));
+  const summary = user ? attendanceSummary(sessions, user.id, attended, user.createdAt) : null;
+  // Every gathering since joining that has happened, or that they attended.
+  const since = (user?.createdAt?.toMillis?.() ?? 0) - 86400000;
+  const history = sessions.filter((s) => {
+    const at = (s.date ?? s.createdAt)?.toMillis?.() ?? 0;
+    return attended.has(s.id) || (s.status !== "upcoming" && at <= Date.now() && at >= since);
+  });
+  const pct = summary?.percent ?? null;
+  const R = 34, CIRC = 2 * Math.PI * R;
+
+  async function submit(sessionId: string, code: string) {
+    if (!user || !code.trim()) return;
+    setBusy(sessionId);
+    const result = await checkIn(sessionId, code, user);
+    setBusy(null);
+    const title = sessions.find((s) => s.id === sessionId)?.meetingTitle ?? "the meeting";
+    if (result === "ok") Alert.alert("Checked in", `Welcome! You're checked in to ${title}.`);
+    else if (result === "already") Alert.alert("Already checked in", `You're already checked in to ${title}.`);
+    else Alert.alert("Not accepted", "That code is not valid, or check-in for this session has closed.");
+  }
+
+  return (
+    <>
+      <View style={[styles.card, styles.pctCard]}>
+        <View style={{ width: 84, height: 84, alignItems: "center", justifyContent: "center" }}>
+          <Svg width={84} height={84} viewBox="0 0 84 84" style={StyleSheet.absoluteFill}>
+            <Circle cx={42} cy={42} r={R} stroke="#F3F4F6" strokeWidth={8} fill="none" />
+            <Circle cx={42} cy={42} r={R} stroke={C.yellow} strokeWidth={8} fill="none" strokeLinecap="round"
+              strokeDasharray={`${CIRC} ${CIRC}`} strokeDashoffset={CIRC - ((pct ?? 0) / 100) * CIRC}
+              transform="rotate(-90 42 42)" />
+          </Svg>
+          <Text style={styles.pctNum}>{pct === null ? "—" : `${pct}%`}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle}>Attendance Percentage</Text>
+          <Text style={styles.pctHead}>{pct === null ? "Welcome!" : pct >= 90 ? "Keep it up!" : pct >= 70 ? "You're doing well" : "Every gathering counts"}</Text>
+          <Text style={styles.cardSub}>
+            {summary && summary.total ? `${summary.attended} of ${summary.total} gatherings · Goal 90%` : "Your rate appears after your first gathering."}
+          </Text>
+        </View>
+      </View>
+
+      <TouchableOpacity style={styles.scanBtn} onPress={() => setScanning(true)} activeOpacity={0.85}>
+        <Ionicons name="qr-code-outline" size={22} color={C.navy} />
+        <Text style={styles.scanTxt}>Scan QR to Check In</Text>
+      </TouchableOpacity>
+
+      {loading ? (
+        <ActivityIndicator color={C.navy} style={{ marginTop: 32 }} />
+      ) : (
+        <>
+          {open.map((s) => (
+            <View key={s.id} style={styles.card}>
+              <View style={styles.rowBetween}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>{s.meetingTitle}</Text>
+                  <Text style={styles.cardSub}>Check-in open · {fmtDate(s.date)}</Text>
+                </View>
+                <StatusBadge status={s.status} />
+              </View>
+              <View style={styles.codeRow}>
+                <TextInput
+                  style={styles.codeInput}
+                  value={codes[s.id] ?? ""}
+                  onChangeText={(t) => setCodes((p) => ({ ...p, [s.id]: t.toUpperCase() }))}
+                  placeholder="Enter code"
+                  placeholderTextColor={C.grey}
+                  autoCapitalize="characters"
+                  maxLength={8}
+                />
+                <TouchableOpacity
+                  style={[styles.primaryBtn, (!codes[s.id]?.trim() || busy === s.id) && { opacity: 0.5 }]}
+                  disabled={!codes[s.id]?.trim() || busy === s.id}
+                  onPress={() => submit(s.id, codes[s.id] ?? "")}
+                >
+                  {busy === s.id ? <ActivityIndicator color={C.white} size="small" /> : <Text style={styles.primaryTxt}>Check in</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+
+          <Text style={styles.sectionTitle}>Your Attendance History</Text>
+          {history.length === 0 ? (
+            <Text style={styles.empty}>No gatherings yet since you joined.</Text>
+          ) : history.map((s) => {
+            const went = attended.has(s.id);
+            return (
+              <View key={s.id} style={[styles.card, styles.rowBetween]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>{s.meetingTitle}</Text>
+                  <Text style={styles.cardSub}>{fmtDate(s.date)} · {fmtTime(s.date)}</Text>
+                </View>
+                <View style={[styles.badge, { backgroundColor: went ? "#DCFCE7" : "#FEE2E2", flexDirection: "row", alignItems: "center", gap: 4 }]}>
+                  <Ionicons name={went ? "checkmark-circle" : "close-circle"} size={14} color={went ? C.green : "#DC2626"} />
+                  <Text style={[styles.badgeTxt, { color: went ? C.green : "#DC2626" }]}>{went ? "Attended" : "Absent"}</Text>
+                </View>
+              </View>
+            );
+          })}
+        </>
+      )}
+
+      <Scanner
+        visible={scanning}
+        onClose={() => setScanning(false)}
+        onScanned={(sessionId, code) => { setScanning(false); submit(sessionId, code); }}
+      />
+    </>
+  );
+}
+
+// ─── Admin view ───────────────────────────────────────────────────────────────
+function AdminAttendance() {
+  const { sessions, loading } = useSessions();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [code, setCode]       = useState<string | null>(null);
+  const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
+
+  useEffect(() => {
+    if (!selectedId && sessions.length) {
+      setSelectedId((sessions.find((s) => s.status === "active") ?? sessions[0]).id);
+    }
+  }, [sessions, selectedId]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    setCode(null);
+    getDoc(doc(db, "attendanceCodes", selectedId)).then((s) => setCode(s.data()?.code ?? null)).catch(() => {});
+    return onSnapshot(query(collection(db, "checkIns"), where("sessionId", "==", selectedId)), (snap) => {
+      setCheckIns(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CheckIn))
+        .sort((a, b) => (b.checkedInAt?.toMillis?.() ?? 0) - (a.checkedInAt?.toMillis?.() ?? 0)));
+    });
+  }, [selectedId]);
+
+  const selected = sessions.find((s) => s.id === selectedId);
+
+  async function setStatus(status: Attendance["status"]) {
+    if (!selected) return;
+    try { await updateDoc(doc(db, "attendance", selected.id), { status }); }
+    catch { Alert.alert("Error", "Could not update the session."); }
+  }
+
+  if (loading) return <ActivityIndicator color={C.navy} style={{ marginTop: 32 }} />;
+  if (!selected) {
+    return <Text style={styles.empty}>No sessions yet. Create one from the web dashboard (Attendance › New Session).</Text>;
+  }
+
+  return (
+    <>
+      <View style={styles.card}>
+        <View style={styles.rowBetween}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>{selected.meetingTitle}</Text>
+            <Text style={styles.cardSub}>{fmtDate(selected.date)} · {fmtTime(selected.date)}</Text>
+          </View>
+          <StatusBadge status={selected.status} />
+        </View>
+        <Text style={styles.bigCode}>{code ?? "······"}</Text>
+        <Text style={styles.cardSub}>Members can type this code to check in. Show the QR code from the web dashboard for scanning.</Text>
+        <View style={styles.statRow}>
+          <Text style={styles.statNum}>{checkIns.length}</Text>
+          <Text style={styles.cardSub}>
+            checked in{selected.totalCapacity ? ` of ${selected.totalCapacity} expected` : ""}
+          </Text>
+        </View>
+        {selected.status === "active" ? (
+          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: "#FEE2E2" }]} onPress={() => setStatus("completed")}>
+            <Text style={[styles.primaryTxt, { color: "#DC2626" }]}>End Session</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => setStatus("active")}>
+            <Text style={styles.primaryTxt}>{selected.status === "completed" ? "Reopen" : "Start"} Check-in</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <Text style={styles.sectionTitle}>Checked In</Text>
+      {checkIns.length === 0 ? (
+        <Text style={styles.empty}>No check-ins yet.</Text>
+      ) : checkIns.map((c) => (
+        <View key={c.id} style={[styles.listRow, styles.rowBetween]}>
+          <Text style={styles.listName}>{c.userName}</Text>
+          <Text style={styles.cardSub}>{fmtTime(c.checkedInAt)}</Text>
+        </View>
+      ))}
+
+      <Text style={styles.sectionTitle}>All Sessions</Text>
+      {sessions.map((s) => (
+        <TouchableOpacity key={s.id} onPress={() => setSelectedId(s.id)}
+          style={[styles.listRow, styles.rowBetween, s.id === selectedId && { backgroundColor: C.light }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.listName}>{s.meetingTitle}</Text>
+            <Text style={styles.cardSub}>{fmtDate(s.date)}</Text>
+          </View>
+          <StatusBadge status={s.status} />
+        </TouchableOpacity>
+      ))}
+    </>
+  );
+}
+
+export default function AttendanceScreen() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { role } = useAuth();
+  const isStaff = role === "admin" || role === "super_admin";
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={20} color={C.navy} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Attendance</Text>
-        <View style={{ width: 36 }} />
+        <Text style={styles.headerTitle}>{i18n.t("nav.attendance")}</Text>
       </View>
-
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNum}>{history.length}</Text>
-            <Text style={styles.statLabel}>Total Sessions</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statNum, { color: "#16A34A" }]}>{attended}</Text>
-            <Text style={styles.statLabel}>Attended</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statNum, { color: C.yellow }]}>{rate}%</Text>
-            <Text style={styles.statLabel}>Rate</Text>
-          </View>
-        </View>
-
-        <View style={styles.qrCard}>
-          <Text style={styles.qrTitle}>Scan QR to Check In</Text>
-          <Text style={styles.qrSub}>Ask your admin for today's QR code, then scan to mark attendance</Text>
-          {checkedIn ? (
-            <View style={styles.checkedInBadge}>
-              <Ionicons name="checkmark-circle" size={24} color="#16A34A" />
-              <Text style={styles.checkedInTxt}>Checked in for today!</Text>
-            </View>
-          ) : (
-            <>
-              <QRPlaceholder />
-              <TouchableOpacity
-                style={[styles.scanBtn, checkingIn && { opacity: 0.6 }]}
-                disabled={checkingIn}
-                onPress={async () => {
-                  if (!user) return;
-                  setCheckingIn(true);
-                  try {
-                    await addDoc(collection(db, "checkIns"), {
-                      userId:      user.id,
-                      displayName: user.displayName || user.email,
-                      checkedInAt: serverTimestamp(),
-                    });
-                    setCheckedIn(true);
-                    Alert.alert("Success", "You have been checked in!");
-                  } catch {
-                    Alert.alert("Error", "Failed to check in. Please try again.");
-                  } finally {
-                    setCheckingIn(false);
-                  }
-                }}
-                activeOpacity={0.85}
-              >
-                {checkingIn
-                  ? <ActivityIndicator size="small" color={C.white} />
-                  : (
-                    <>
-                      <Ionicons name="qr-code-outline" size={18} color={C.white} />
-                      <Text style={styles.scanTxt}> Scan QR Code</Text>
-                    </>
-                  )}
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-
-        <Text style={styles.sectionTitle}>Attendance History</Text>
-        {loading ? (
-          <ActivityIndicator color={C.navy} style={{ marginTop: 20 }} />
-        ) : history.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <Ionicons name="calendar-outline" size={36} color={C.grey} style={{ opacity: 0.3 }} />
-            <Text style={styles.emptyTxt}>No attendance records found.</Text>
-          </View>
-        ) : (
-          history.map((a) => (
-            <View key={a.id} style={styles.recordCard}>
-              <View style={styles.recordLeft}>
-                <Text style={styles.recordTitle}>{a.meetingTitle}</Text>
-                <Text style={styles.recordDate}>{fmtDate(a.date)}</Text>
-              </View>
-              <StatusBadge status={a.status} />
-            </View>
-          ))
-        )}
-
-        <View style={{ height: 24 }} />
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
+        {isStaff ? <AdminAttendance /> : <MemberAttendance />}
       </ScrollView>
     </View>
   );
 }
 
-// ─── Root Export ──────────────────────────────────────────────────────────────
-export default function AttendanceScreen() {
-  const { role } = useAuth();
-  if (role === "admin") return <AdminAttendance />;
-  return <MemberAttendance />;
-}
+const styles = themedStyles({
+  root:         { flex: 1, backgroundColor: L.bg },
+  header:       { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14, backgroundColor: L.white, borderBottomWidth: 1, borderBottomColor: L.border },
+  backBtn:      { width: 36, height: 36, borderRadius: 10, backgroundColor: L.light, alignItems: "center", justifyContent: "center" },
+  headerTitle:  { fontSize: 20, fontWeight: "800", color: L.navy },
+  content:      { padding: 16, gap: 12 },
 
-const styles = StyleSheet.create({
-  root:          { flex: 1, backgroundColor: C.bg },
-  header:        { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14 },
-  backBtn:       { width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
-  headerTitle:   { flex: 1, fontSize: 18, fontWeight: "800", color: C.navy, textAlign: "center" },
-  refreshBtn:    { width: 36, height: 36, borderRadius: 10, backgroundColor: C.light, alignItems: "center", justifyContent: "center" },
-  content:       { paddingHorizontal: 16 },
-  statsRow:      { flexDirection: "row", gap: 10, marginBottom: 20 },
-  statCard:      { flex: 1, backgroundColor: C.white, borderRadius: 14, padding: 14, alignItems: "center", borderWidth: 1, borderColor: C.border },
-  statNum:       { fontSize: 22, fontWeight: "800", color: C.navy, marginBottom: 2 },
-  statLabel:     { fontSize: 10, color: C.grey, fontWeight: "600" },
-  qrCard:        { backgroundColor: C.white, borderRadius: 20, padding: 20, marginBottom: 24, alignItems: "center", borderWidth: 1, borderColor: C.border },
-  qrTitle:       { fontSize: 15, fontWeight: "700", color: C.navy, marginBottom: 4 },
-  qrSub:         { fontSize: 12, color: C.grey, textAlign: "center", marginBottom: 16, lineHeight: 18 },
-  qrInfo:        { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8 },
-  qrInfoTxt:     { fontSize: 11, color: C.grey, fontStyle: "italic" },
-  qrGrid:        { width: 120, height: 120, flexDirection: "row", flexWrap: "wrap", marginBottom: 16 },
-  qrCell:        { width: 15, height: 15, backgroundColor: "#F3F4F6" },
-  qrCellOn:      { backgroundColor: C.navy },
-  scanBtn:       { flexDirection: "row", alignItems: "center", backgroundColor: C.navy, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
-  scanTxt:       { color: C.white, fontSize: 14, fontWeight: "700" },
-  checkedInBadge:{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#F0FDF4", paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12 },
-  checkedInTxt:  { fontSize: 14, fontWeight: "700", color: "#16A34A" },
-  sectionTitle:  { fontSize: 15, fontWeight: "700", color: C.navy, marginBottom: 12 },
-  emptyWrap:     { alignItems: "center", paddingVertical: 40, gap: 10 },
-  emptyTxt:      { fontSize: 14, color: C.grey },
-  recordCard:    { flexDirection: "row", alignItems: "center", backgroundColor: C.white, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: C.border },
-  recordLeft:    { flex: 1 },
-  recordTitle:   { fontSize: 14, fontWeight: "600", color: C.dark, marginBottom: 3 },
-  recordDate:    { fontSize: 12, color: C.grey },
-  badge:         { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
-  badgeTxt:      { fontSize: 10, fontWeight: "700" },
-  // Admin check-in list
-  checkInRow:    { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.white, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: C.border },
-  checkInInfo:   { flex: 1 },
-  checkInName:   { fontSize: 14, fontWeight: "600", color: C.dark },
-  checkInTime:   { fontSize: 12, color: C.grey },
-  checkInBadge:  { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#F0FDF4", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
-  checkInBadgeTxt:{ fontSize: 11, color: "#16A34A", fontWeight: "600" },
+  pctCard:      { flexDirection: "row", alignItems: "center", gap: 16 },
+  pctNum:       { fontSize: 18, fontWeight: "800", color: "#111827" },
+  pctHead:      { fontSize: 14, fontWeight: "600", color: L.dark, marginTop: 2 },
+  scanBtn:      { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, backgroundColor: L.yellow, borderRadius: 14, paddingVertical: 16 },
+  scanTxt:      { fontSize: 15, fontWeight: "700", color: L.navy },
+
+  card:         { backgroundColor: L.white, borderRadius: 16, borderWidth: 1, borderColor: L.border, padding: 16, gap: 10 },
+  rowBetween:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  cardTitle:    { fontSize: 15, fontWeight: "700", color: L.navy },
+  cardSub:      { fontSize: 12, color: L.grey },
+  codeRow:      { flexDirection: "row", gap: 8 },
+  codeInput:    { flex: 1, borderWidth: 1, borderColor: L.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, letterSpacing: 3, color: L.dark },
+  primaryBtn:   { backgroundColor: L.navy, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 11, alignItems: "center", justifyContent: "center" },
+  primaryTxt:   { color: L.white, fontWeight: "700", fontSize: 14 },
+
+  bigCode:      { fontSize: 36, fontWeight: "800", letterSpacing: 8, color: L.navy, textAlign: "center", marginVertical: 6 },
+  statRow:      { flexDirection: "row", alignItems: "baseline", gap: 8 },
+  statNum:      { fontSize: 28, fontWeight: "800", color: L.navy },
+
+  sectionTitle: { fontSize: 13, fontWeight: "700", color: L.dark, marginTop: 8, textTransform: "uppercase", letterSpacing: 0.5 },
+  empty:        { fontSize: 13, color: L.grey, textAlign: "center", paddingVertical: 16 },
+  listRow:      { backgroundColor: L.white, borderRadius: 12, borderWidth: 1, borderColor: L.border, paddingHorizontal: 14, paddingVertical: 12 },
+  listName:     { fontSize: 14, fontWeight: "600", color: L.dark },
+
+  badge:        { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  badgeTxt:     { fontSize: 11, fontWeight: "700" },
+
+  scannerRoot:  { flex: 1, backgroundColor: "#000", alignItems: "center", justifyContent: "center" },
+  scannerMsg:   { padding: 32, gap: 16, alignItems: "center" },
+  scannerTxt:   { color: L.white, fontSize: 15, textAlign: "center" },
+  scannerFrame: { position: "absolute", width: 240, height: 240, borderWidth: 3, borderColor: L.yellow, borderRadius: 20 },
+  scannerClose: { position: "absolute", top: 48, right: 20, width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center" },
+  scannerHint:  { position: "absolute", bottom: 64, color: L.white, fontSize: 13, textAlign: "center", paddingHorizontal: 32 },
 });

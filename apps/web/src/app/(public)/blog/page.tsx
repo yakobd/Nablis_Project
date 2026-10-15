@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { BlogCard, BlogCardData } from "@/components/public/BlogCard";
 
@@ -86,18 +86,23 @@ export default function BlogPage() {
       try {
         const q = query(
           collection(db, "blogPosts"),
-          where("published", "==", true),
-          orderBy("createdAt", "desc")
+          where("status", "==", "published"),
+          where("internal", "==", false)
         );
         const snap = await getDocs(q);
         if (snap.empty) {
           setPosts(FALLBACK);
         } else {
           setPosts(
-            snap.docs.map((doc) => ({
-              id: doc.id,
-              ...(doc.data() as Omit<BlogCardData, "id">),
-            }))
+            snap.docs
+              .map((doc) => ({
+                id: doc.id,
+                ...(doc.data() as Omit<BlogCardData, "id">),
+              }))
+              // Hide posts scheduled for later.
+              .filter((p) => !p.publishAt || p.publishAt.toDate().getTime() <= Date.now())
+              // Sorted here rather than in the query to avoid a composite index.
+              .sort((a, b) => (b.createdAt?.toDate().getTime() ?? 0) - (a.createdAt?.toDate().getTime() ?? 0))
           );
         }
       } catch {

@@ -1,424 +1,322 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { collection, getDocs, onSnapshot, query, where } from "firebase/firestore";
+import { BookOpenText, Clock3, CheckCircle2, TrendingUp, Heart, Filter, Quote, PenLine } from "lucide-react";
 import {
-  collection, query, where, getDocs,
-  doc, updateDoc, addDoc, deleteDoc, serverTimestamp,
-} from "firebase/firestore";
-import { db, useAuth } from "@/lib/firebase";
-import { X, CheckCircle, XCircle, MessageSquare, Plus, Trash2 } from "lucide-react";
-import type { Testimony } from "@nablis/shared/firebase";
+  db, useAuth, TESTIMONY_CATEGORIES, testimonyAuthor, testimonyCategoryKey, encouragementCount,
+  toggleEncouraged, type TestimonyDoc,
+} from "@/lib/firebase";
+import { Pagination } from "@/components/ui/Pagination";
+import { useToast } from "@/components/ui/Toast";
+import { Avatar, CategoryPill, ago, authorLabel, catLabel, excerpt, fmtDate, tsMillis } from "./_components/shared";
+import { PageTitle } from "@/components/PageTitle";
+import { useTranslation } from "@nablis/i18n";
 
-function fmtDate(ts: { toDate: () => Date } | null | undefined) {
-  if (!ts) return "—";
-  try { return ts.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
-  catch { return "—"; }
-}
+const toDocs = (snap: { docs: { id: string; data: () => unknown }[] }) =>
+  snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) } as TestimonyDoc));
 
-function CategoryBadge({ category }: { category: string }) {
-  const map: Record<string, string> = {
-    healing:     "bg-green-50 text-green-700",
-    provision:   "bg-blue-50 text-blue-700",
-    restoration: "bg-purple-50 text-purple-700",
-    other:       "bg-gray-100 text-gray-600",
-  };
-  return (
-    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold capitalize ${map[category] ?? "bg-gray-100 text-gray-600"}`}>
-      {category}
-    </span>
-  );
-}
-
-// ── Add Testimony modal ───────────────────────────────────────────────────────
-function AddTestimonyModal({
-  authorName,
-  onClose,
-  onAdded,
-}: {
-  authorName: string;
-  onClose: () => void;
-  onAdded: (t: Testimony) => void;
-}) {
-  const [title, setTitle]       = useState("");
-  const [content, setContent]   = useState("");
-  const [category, setCategory] = useState<Testimony["category"]>("healing");
-  const [loading, setLoading]   = useState(false);
-
-  const INPUT = "w-full px-4 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors";
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!title.trim() || !content.trim()) return;
-    setLoading(true);
-    try {
-      const payload = {
-        authorName,
-        title:     title.trim(),
-        content:   content.trim(),
-        category,
-        status:    "published" as const,
-        likes:     0,
-        createdAt: serverTimestamp(),
-      };
-      const ref = await addDoc(collection(db, "testimonies"), payload);
-      onAdded({ id: ref.id, ...payload } as unknown as Testimony);
-      onClose();
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#F3F4F6]">
-          <h3 className="text-[#1B2E6B] font-bold">Add Testimony</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#EEF1F8] text-[#9CA3AF]"><X size={16} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Title</label>
-            <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)}
-              placeholder="Give this testimony a title…" className={INPUT} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Category</label>
-            <select value={category} onChange={(e) => setCategory(e.target.value as Testimony["category"])}
-              className={INPUT + " bg-white"}>
-              <option value="healing">Healing</option>
-              <option value="provision">Provision</option>
-              <option value="restoration">Restoration</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Testimony</label>
-            <textarea required value={content} onChange={(e) => setContent(e.target.value)} rows={5}
-              placeholder="Share how God has worked…" className={INPUT + " resize-none"} />
-          </div>
-          <button type="submit" disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-[#F5C518] text-[#1B2E6B] font-semibold py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors disabled:opacity-60 text-sm">
-            {loading && <div className="w-4 h-4 border-2 border-[#1B2E6B]/40 border-t-[#1B2E6B] rounded-full animate-spin" />}
-            Publish Testimony
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ── Review modal ──────────────────────────────────────────────────────────────
-function ReviewModal({
-  testimony,
-  onClose,
-  onAction,
-}: {
-  testimony: Testimony;
-  onClose: () => void;
-  onAction: (id: string, status: "published" | "rejected") => void;
-}) {
-  const [loading, setLoading] = useState(false);
-
-  async function act(status: "published" | "rejected") {
-    setLoading(true);
-    try {
-      await updateDoc(doc(db, "testimonies", testimony.id), { status });
-      onAction(testimony.id, status);
-      onClose();
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#F3F4F6]">
-          <h3 className="text-[#1B2E6B] font-bold">Review Testimony</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#EEF1F8] text-[#9CA3AF]"><X size={16} /></button>
-        </div>
-        <div className="p-6 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#1B2E6B] flex items-center justify-center flex-shrink-0">
-              <span className="text-[#F5C518] font-bold">{(testimony.authorName || "?")[0].toUpperCase()}</span>
-            </div>
-            <div>
-              <p className="text-[#1B2E6B] font-semibold text-sm">{testimony.authorName}</p>
-              <div className="flex items-center gap-2 mt-0.5">
-                <CategoryBadge category={testimony.category} />
-                <span className="text-[#9CA3AF] text-xs">{fmtDate(testimony.createdAt)}</span>
-              </div>
-            </div>
-          </div>
-          <div className="bg-[#F9FAFB] rounded-xl p-4">
-            <p className="text-[#1B2E6B] font-semibold text-sm mb-2">{testimony.title}</p>
-            <p className="text-[#6B7280] text-sm leading-relaxed">{testimony.content}</p>
-          </div>
-          <div className="flex gap-3 pt-1">
-            <button onClick={() => act("published")} disabled={loading}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#1B2E6B] text-white text-sm font-semibold hover:bg-[#162554] transition-colors disabled:opacity-60">
-              <CheckCircle size={15} /> Approve
-            </button>
-            <button onClick={() => act("rejected")} disabled={loading}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-50 text-red-600 text-sm font-semibold hover:bg-red-100 transition-colors disabled:opacity-60">
-              <XCircle size={15} /> Reject
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Admin / Super Admin view ──────────────────────────────────────────────────
+// ── Admin / Super Admin ───────────────────────────────────────────────────────
 function AdminTestimonials() {
-  const { user, role } = useAuth();
-  const [pending,   setPending]   = useState<Testimony[]>([]);
-  const [published, setPublished] = useState<Testimony[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [tab,       setTab]       = useState<"pending" | "published" | "all">("pending");
-  const [reviewing, setReviewing] = useState<Testimony | null>(null);
-  const [adding,    setAdding]    = useState(false);
+  const { t: tr } = useTranslation();
+  const [all, setAll] = useState<TestimonyDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"pending" | "published">("pending");
+  const [page, setPage] = useState(1);
+  const PAGE = 6;
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const [pSnap, pubSnap] = await Promise.all([
-          getDocs(query(collection(db, "testimonies"), where("status", "==", "pending"))),
-          getDocs(query(collection(db, "testimonies"), where("status", "==", "published"))),
-        ]);
-        const sortTs = (a: Testimony, b: Testimony) =>
-          (((b.createdAt as unknown as { seconds?: number })?.seconds) ?? 0) -
-          (((a.createdAt as unknown as { seconds?: number })?.seconds) ?? 0);
-        setPending(pSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony)).sort(sortTs));
-        setPublished(pubSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony)).sort(sortTs));
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+  useEffect(() => onSnapshot(collection(db, "testimonies"), (snap) => {
+    setAll(toDocs(snap).sort((a, b) => tsMillis(b) - tsMillis(a)));
+    setLoading(false);
+  }, () => setLoading(false)), []);
 
-  function handleAction(id: string, status: "published" | "rejected") {
-    if (status === "published") {
-      const item = pending.find((t) => t.id === id)!;
-      setPending((p) => p.filter((t) => t.id !== id));
-      setPublished((p) => [{ ...item, status: "published" }, ...p]);
-    } else {
-      setPending((p) => p.filter((t) => t.id !== id));
-    }
-  }
+  const pending = all.filter((t) => t.status === "pending");
+  const published = all.filter((t) => t.status === "published");
+  const rows = tab === "pending" ? pending : published;
 
-  async function handleDelete(t: Testimony) {
-    if (!confirm(`Delete "${t.title}"?`)) return;
-    await deleteDoc(doc(db, "testimonies", t.id));
-    setPending((p)   => p.filter((x) => x.id !== t.id));
-    setPublished((p) => p.filter((x) => x.id !== t.id));
-  }
+  // Growth: submissions this month vs last month.
+  const growth = useMemo(() => {
+    const now = new Date();
+    const thisStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const lastStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+    const thisMonth = all.filter((t) => tsMillis(t) >= thisStart).length;
+    const lastMonth = all.filter((t) => tsMillis(t) >= lastStart && tsMillis(t) < thisStart).length;
+    if (!lastMonth) return thisMonth ? 100 : 0;
+    return Math.round(((thisMonth - lastMonth) / lastMonth) * 100);
+  }, [all]);
 
-  function handleAdded(t: Testimony) {
-    setPublished((p) => [t, ...p]);
-    setTab("published");
-  }
-
-  const all = [...pending, ...published].sort(
-    (a, b) => ((b.createdAt as any)?.seconds ?? 0) - ((a.createdAt as any)?.seconds ?? 0)
-  );
-  const displayed = tab === "pending" ? pending : tab === "published" ? published : all;
+  const stats = [
+    { label: tr("testimony.total"), value: all.length, note: tr("testimony.growth", { pct: `${growth >= 0 ? "+" : ""}${growth}` }), noteCls: growth >= 0 ? "text-[#15803D]" : "text-[#B91C1C]", Icon: BookOpenText, iconCls: "bg-[#EEF1F8] text-[#1E3A8A]", NoteIcon: TrendingUp },
+    { label: tr("testimony.pendingReview"), value: pending.length, note: tr("testimony.attention"), noteCls: "text-[#B45309]", Icon: Clock3, iconCls: "bg-[#FEF3C7] text-[#B45309]" },
+    { label: tr("testimony.published"), value: published.length, note: tr("testimony.allCategories"), noteCls: "text-[#6B7280]", Icon: CheckCircle2, iconCls: "bg-[#DCFCE7] text-[#15803D]" },
+  ];
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-[#1B2E6B]">Testimonials</h1>
-        {role === 'super_admin' && (
-          <button onClick={() => setAdding(true)}
-            className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
-            <Plus size={15} /> Add Testimony
-          </button>
-        )}
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <PageTitle id="testimonialsAdmin" />
+        </div>
+        <Link href="/testimonials/share" className="inline-flex items-center gap-2 self-start px-6 py-3 rounded-full bg-[#F5C518] text-[#1B2E6B] text-sm font-bold hover:bg-[#e6b800]">
+          <PenLine size={15} /> {tr("testimony.add")}
+        </Link>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { label: "Total",          value: pending.length + published.length, icon: "📜", color: "#1B2E6B" },
-          { label: "Pending Review", value: pending.length,                    icon: "⏳", color: "#d97706" },
-          { label: "Published",      value: published.length,                  icon: "✅", color: "#059669" },
-        ].map(({ label, value, icon, color }) => (
-          <div key={label} className="bg-white rounded-2xl p-5 border border-[#E5E7EB] shadow-sm">
-            <p className="text-2xl mb-2">{icon}</p>
-            <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-            <p className="text-[#9CA3AF] text-xs mt-0.5">{label}</p>
+      <div className="grid sm:grid-cols-3 gap-5 stagger">
+        {stats.map(({ label, value, note, noteCls, Icon, iconCls, NoteIcon }) => (
+          <div key={label} className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-start justify-between">
+              <p className="text-sm font-medium text-[#6B7280]">{label}</p>
+              <span className={`w-10 h-10 rounded-xl flex items-center justify-center ${iconCls}`}><Icon size={19} /></span>
+            </div>
+            <p className="font-display text-4xl font-bold text-[#111827] mt-2">{loading ? "—" : value}</p>
+            <p className={`flex items-center gap-1 text-xs font-medium mt-2 ${noteCls}`}>
+              {NoteIcon && <NoteIcon size={13} />}{note}
+            </p>
           </div>
         ))}
       </div>
 
-      {/* Tabs + table */}
-      <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm overflow-hidden">
-        <div className="flex border-b border-[#F3F4F6]">
+      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <div className="flex gap-2 px-5 pt-5 border-b border-[#F3F4F6]">
           {([
-            { key: "pending",   label: `Pending Approval (${pending.length})` },
-            { key: "published", label: `Published (${published.length})` },
-            { key: "all",       label: `All (${all.length})` },
+            { key: "pending", label: tr("testimony.pendingApproval"), count: pending.length },
+            { key: "published", label: tr("testimony.published"), count: published.length },
           ] as const).map((t) => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              className={[
-                "px-5 py-3.5 text-sm font-medium transition-colors border-b-2 whitespace-nowrap",
-                tab === t.key
-                  ? "text-[#1B2E6B] border-[#1B2E6B]"
-                  : "text-[#6B7280] border-transparent hover:text-[#1B2E6B]",
-              ].join(" ")}>
+            <button key={t.key} onClick={() => { setTab(t.key); setPage(1); }}
+              className={`px-4 pb-3.5 text-sm font-semibold border-b-2 transition-colors ${tab === t.key ? "text-[#1E3A8A] border-[#1E3A8A]" : "text-[#6B7280] border-transparent hover:text-[#1E3A8A]"}`}>
               {t.label}
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] ${tab === t.key ? "bg-[#1E3A8A] text-white" : "bg-[#F3F4F6] text-[#6B7280]"}`}>{t.count}</span>
             </button>
           ))}
         </div>
 
         {loading ? (
-          <div className="py-12 text-center">
-            <div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" />
+          <div className="py-14"><div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" /></div>
+        ) : rows.length === 0 ? (
+          <div className="py-14 text-center text-sm text-[#9CA3AF]">
+            {tab === "pending" ? tr("testimony.noPending") : tr("testimony.noPublished")}
           </div>
-        ) : displayed.length === 0 ? (
-          <div className="py-12 text-center text-[#9CA3AF] text-sm">No {tab} testimonies</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[#F9FAFB] border-b border-[#F3F4F6]">
-                  {["Author", "Title", "Category", "Date", "Status", ""].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-[#9CA3AF]">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#F3F4F6]">
-                {displayed.map((t) => (
-                  <tr key={t.id} className="hover:bg-[#F9FAFB] transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-[#1B2E6B] flex items-center justify-center text-[10px] font-bold text-[#F5C518] flex-shrink-0">
-                          {t.authorName[0]?.toUpperCase()}
-                        </div>
-                        <span className="text-[#374151] font-medium text-xs">{t.authorName}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-[#374151] text-xs max-w-[180px] truncate">{t.title}</td>
-                    <td className="px-4 py-3"><CategoryBadge category={t.category} /></td>
-                    <td className="px-4 py-3 text-[#6B7280] text-xs">{fmtDate(t.createdAt)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        t.status === "published" ? "bg-green-50 text-green-700" :
-                        t.status === "pending"   ? "bg-yellow-50 text-yellow-700" :
-                                                   "bg-red-50 text-red-600"
-                      }`}>
-                        {t.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        {t.status === "pending" && (
-                          <button onClick={() => setReviewing(t)}
-                            className="px-3 py-1.5 rounded-lg bg-[#EEF1F8] text-[#1B2E6B] text-xs font-semibold hover:bg-[#1B2E6B] hover:text-white transition-colors">
-                            Review
-                          </button>
-                        )}
-                        <button onClick={() => handleDelete(t)}
-                          className="p-1.5 rounded-lg text-[#9CA3AF] hover:bg-red-50 hover:text-red-500 transition-colors">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[760px]">
+                <thead>
+                  <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-[#9CA3AF]">
+                    <th className="px-6 py-4">{tr("testimony.memberName")}</th>
+                    <th className="px-4 py-4">{tr("testimony.titleCol")}</th>
+                    <th className="px-4 py-4">{tr("events.category")}</th>
+                    <th className="px-4 py-4">{tr("testimony.submitted")}</th>
+                    <th className="px-6 py-4 text-right">{tr("testimony.action")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-[#F3F4F6] stagger">
+                  {rows.slice((page - 1) * PAGE, page * PAGE).map((t) => (
+                    <tr key={t.id} className="hover:bg-[#F9FAFB] transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <Avatar name={t.authorName} photo={t.authorPhotoURL} />
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[#111827] truncate">{t.authorName || "Member"}</p>
+                            {t.anonymous && <p className="text-[11px] text-[#9CA3AF]">{tr("testimony.postingAnon")}</p>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 max-w-[320px]">
+                        <p className="font-semibold text-[#1E3A8A] truncate">{t.title}</p>
+                        <p className="text-xs text-[#6B7280] truncate mt-0.5">{excerpt(t.content, 80)}</p>
+                      </td>
+                      <td className="px-4 py-4"><CategoryPill category={t.category} /></td>
+                      <td className="px-4 py-4 text-[#6B7280] whitespace-nowrap">{fmtDate(t)}</td>
+                      <td className="px-6 py-4 text-right">
+                        <Link href={`/testimonials/${t.id}`}
+                          className="inline-flex px-5 py-2 rounded-full bg-[#1E3A8A] text-white text-xs font-semibold hover:bg-[#1B2E6B]">
+                          {tab === "pending" ? tr("testimony.review") : tr("common.view")}
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-6 py-4 border-t border-[#F3F4F6]">
+              <Pagination page={page} pageSize={PAGE} total={rows.length} onPage={setPage} />
+            </div>
+          </>
         )}
       </div>
-
-      {reviewing && (
-        <ReviewModal testimony={reviewing} onClose={() => setReviewing(null)} onAction={handleAction} />
-      )}
-      {adding && role === 'super_admin' && (
-        <AddTestimonyModal
-          authorName={user?.displayName || user?.email || "Admin"}
-          onClose={() => setAdding(false)}
-          onAdded={handleAdded}
-        />
-      )}
     </div>
   );
 }
 
-// ── Member view ───────────────────────────────────────────────────────────────
+// ── Member feed ───────────────────────────────────────────────────────────────
+type Feed = "latest" | "encouraging" | "healing" | "answered_prayer";
+const FEEDS: { key: Feed; label: string }[] = [
+  { key: "latest", label: "Latest Stories" },
+  { key: "encouraging", label: "Most Encouraging" },
+  { key: "healing", label: "Healing" },
+  { key: "answered_prayer", label: "Answered Prayer" },
+];
+
+function StoryCard({ t, uid, onEncourage }: { t: TestimonyDoc; uid: string; onEncourage: (t: TestimonyDoc) => void }) {
+  const { t: tr } = useTranslation();
+  const image = t.attachments?.find((a) => a.kind === "image")?.url;
+  const mine = t.encouragedBy?.includes(uid);
+  const count = encouragementCount(t);
+  return (
+    <div className="group bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col">
+      <Link href={`/testimonials/${t.id}`} className="block h-48 bg-gradient-to-br from-[#1E3A8A] to-[#3B5BB5] overflow-hidden relative">
+        {image ? (
+          <img src={image} alt="" className="w-full h-full object-cover group-hover-zoom" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-white/25"><Quote size={56} /></div>
+        )}
+      </Link>
+      <div className="p-5 flex flex-col flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <CategoryPill category={t.category} />
+          <span className="text-[11px] text-[#9CA3AF]">{ago(t)}</span>
+        </div>
+        <Link href={`/testimonials/${t.id}`} className="text-lg font-semibold text-[#111827] mt-3 leading-snug line-clamp-2 hover:text-[#1E3A8A]">{t.title}</Link>
+        <p className="text-sm text-[#6B7280] mt-2 line-clamp-3 flex-1">{excerpt(t.content, 150)}</p>
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-[#F3F4F6]">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Avatar name={authorLabel(t)} photo={t.anonymous ? null : t.authorPhotoURL} size={30} />
+            <span className="text-sm font-medium text-[#374151] truncate">{authorLabel(t)}</span>
+          </div>
+          <button onClick={() => onEncourage(t)} aria-label={mine ? tr("testimony.unencourage") : tr("testimony.encouraged")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${mine ? "bg-[#FFE4E6] text-[#E11D48]" : "bg-[#F3F4F6] text-[#6B7280] hover:bg-[#FFE4E6] hover:text-[#E11D48]"}`}>
+            <Heart size={13} className={mine ? "fill-current animate-pop" : ""} /> {count > 0 ? count : ""}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MemberTestimonials() {
+  const { t: tr } = useTranslation();
   const { user } = useAuth();
-  const [published, setPublished] = useState<Testimony[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const toast = useToast();
+  const [stories, setStories] = useState<TestimonyDoc[]>([]);
+  const [mine, setMine] = useState<TestimonyDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [feed, setFeed] = useState<Feed>("latest");
+  const [category, setCategory] = useState("");
+  const [shown, setShown] = useState(9);
 
   useEffect(() => {
     if (!user) return;
-    getDocs(query(collection(db, "testimonies"), where("status", "==", "published")))
-      .then((snap) => {
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony));
-        data.sort((a, b) =>
-          (((b.createdAt as unknown as { seconds?: number })?.seconds) ?? 0) -
-          (((a.createdAt as unknown as { seconds?: number })?.seconds) ?? 0));
-        setPublished(data);
-      })
-      .catch(() => setPublished([]))
-      .finally(() => setLoading(false));
-  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+    const unsub = onSnapshot(query(collection(db, "testimonies"), where("status", "==", "published")), (snap) => {
+      setStories(toDocs(snap));
+      setLoading(false);
+    }, () => setLoading(false));
+    getDocs(query(collection(db, "testimonies"), where("authorId", "==", user.id)))
+      .then((snap) => setMine(toDocs(snap).filter((t) => t.status !== "published").sort((a, b) => tsMillis(b) - tsMillis(a))))
+      .catch(() => {});
+    return unsub;
+  }, [user]);
+
+  const visible = useMemo(() => {
+    let list = [...stories];
+    if (feed === "healing" || feed === "answered_prayer") list = list.filter((t) => testimonyCategoryKey(t.category) === feed);
+    if (category) list = list.filter((t) => testimonyCategoryKey(t.category) === category);
+    return feed === "encouraging"
+      ? list.sort((a, b) => encouragementCount(b) - encouragementCount(a) || tsMillis(b) - tsMillis(a))
+      : list.sort((a, b) => tsMillis(b) - tsMillis(a));
+  }, [stories, feed, category]);
+
+  async function encourage(t: TestimonyDoc) {
+    if (!user) return;
+    const on = !t.encouragedBy?.includes(user.id);
+    // Optimistic; the listener confirms it.
+    setStories((list) => list.map((x) => x.id === t.id
+      ? { ...x, encouragedBy: on ? [...(x.encouragedBy ?? []), user.id] : (x.encouragedBy ?? []).filter((u) => u !== user.id) }
+      : x));
+    try {
+      await toggleEncouraged(t.id, user.id, on);
+    } catch {
+      toast({ message: tr("testimony.saveError"), type: "error" });
+    }
+  }
 
   if (!user) return null;
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-xl font-bold text-[#1B2E6B]">Testimonials</h1>
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <PageTitle id="testimonials" />
+        </div>
+        <Link href="/testimonials/share" className="inline-flex items-center gap-2 self-start px-7 py-3 rounded-full bg-[#F5C518] text-[#1B2E6B] text-sm font-bold shadow-[0_10px_24px_-12px_rgba(245,197,24,0.9)] hover:bg-[#e6b800]">
+          <PenLine size={15} /> {tr("testimony.share")}
+        </Link>
+      </div>
 
-      <div>
-        <h2 className="text-sm font-semibold text-[#1B2E6B] mb-3">Community Testimonies</h2>
-        {loading ? (
-          <div className="py-10 text-center">
-            <div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" />
-          </div>
-        ) : published.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-[#E5E7EB] p-10 text-center text-[#9CA3AF] text-sm">
-            <MessageSquare size={32} className="mx-auto mb-2 opacity-30" />
-            No published testimonies yet.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {published.map((t) => (
-              <div key={t.id} className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-9 h-9 rounded-full bg-[#1B2E6B] flex items-center justify-center flex-shrink-0">
-                    <span className="text-[#F5C518] font-bold text-sm">{t.authorName[0]?.toUpperCase()}</span>
-                  </div>
-                  <div>
-                    <p className="text-[#374151] font-semibold text-sm">{t.authorName}</p>
-                    <div className="flex items-center gap-2">
-                      <CategoryBadge category={t.category} />
-                      <span className="text-[#9CA3AF] text-xs">{fmtDate(t.createdAt)}</span>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-[#1B2E6B] font-semibold text-sm mb-1">{t.title}</p>
-                <p className="text-[#6B7280] text-sm leading-relaxed line-clamp-3">{t.content}</p>
-                {(t.likes ?? 0) > 0 && (
-                  <p className="text-[#9CA3AF] text-xs mt-2">❤️ {t.likes}</p>
-                )}
-              </div>
+      {mine.length > 0 && (
+        <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF] mb-3">{tr("testimony.yourSubmissions")}</p>
+          <div className="space-y-2">
+            {mine.map((t) => (
+              <Link key={t.id} href={`/testimonials/${t.id}`} className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-[#F9FAFB] hover:bg-[#EEF1F8]">
+                <span className="text-sm font-medium text-[#111827] truncate">{t.title}</span>
+                <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full flex-shrink-0 ${t.status === "pending" ? "bg-[#FEF3C7] text-[#B45309]" : "bg-[#FEE2E2] text-[#B91C1C]"}`}>
+                  {t.status === "pending" ? tr("testimony.awaiting") : tr("testimony.notPublished")}
+                </span>
+              </Link>
             ))}
           </div>
-        )}
+        </div>
+      )}
+
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-2">
+          {FEEDS.map((f) => (
+            <button key={f.key} onClick={() => { setFeed(f.key); setShown(9); }}
+              className={`px-5 py-2.5 rounded-full text-sm font-medium transition-all ${feed === f.key ? "bg-[#1E3A8A] text-white shadow-[0_8px_18px_-8px_rgba(30,58,138,0.8)]" : "bg-white text-[#111827] hover:bg-[#EEF1F8]"}`}>
+              {tr(`testimony.feed.${f.key}`)}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-2 bg-white rounded-full pl-4 pr-2 py-1.5 text-sm text-[#374151] self-start">
+          <Filter size={14} className="text-[#6B7280]" />
+          <select value={category} onChange={(e) => { setCategory(e.target.value); setShown(9); }}
+            className="bg-transparent py-1 pr-2 focus:outline-none cursor-pointer">
+            <option value="">{tr("testimony.filter")}</option>
+            {TESTIMONY_CATEGORIES.map((c) => <option key={c.key} value={c.key}>{catLabel(c.key)}</option>)}
+          </select>
+        </label>
       </div>
+
+      {loading ? (
+        <div className="py-16"><div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" /></div>
+      ) : visible.length === 0 ? (
+        <div className="bg-white rounded-2xl p-12 text-center">
+          <Quote size={34} className="mx-auto text-[#1E3A8A]/25" />
+          <p className="text-[#374151] font-medium mt-3">{tr("testimony.noStories")}</p>
+          <p className="text-sm text-[#9CA3AF] mt-1">{tr("testimony.beFirst")}</p>
+        </div>
+      ) : (
+        <>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 stagger">
+            {visible.slice(0, shown).map((t) => <StoryCard key={t.id} t={t} uid={user.id} onEncourage={encourage} />)}
+          </div>
+          {visible.length > shown && (
+            <div className="flex justify-center">
+              <button onClick={() => setShown((n) => n + 9)}
+                className="px-8 py-3 rounded-full border-2 border-[#1E3A8A] text-[#1E3A8A] text-sm font-semibold hover:bg-[#1E3A8A] hover:text-white transition-colors">
+                Load More Testimonies
+              </button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
 export default function TestimonialsPage() {
   const { user, role } = useAuth();
   if (!user) return null;
-  const isAdminOrSuperAdmin = role === "admin" || role === "super_admin";
-  return isAdminOrSuperAdmin ? <AdminTestimonials /> : <MemberTestimonials />;
+  return role === "admin" || role === "super_admin" ? <AdminTestimonials /> : <MemberTestimonials />;
 }

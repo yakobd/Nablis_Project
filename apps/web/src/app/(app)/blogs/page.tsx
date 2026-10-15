@@ -1,260 +1,327 @@
 "use client";
-import React, { useEffect, useState } from "react";
-import { collection, query, orderBy, getDocs, where, Timestamp } from "firebase/firestore";
-import { db, useAuth } from "@/lib/firebase";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Plus, Pencil, Play, Eye, Clock, BookOpen, Film } from "lucide-react";
-import type { BlogPost } from "@nablis/shared/firebase";
+import { arrayRemove, arrayUnion, collection, doc, onSnapshot, updateDoc } from "firebase/firestore";
+import {
+  ArrowRight, ChevronRight, Heart, Play, X, GraduationCap, Users, BookOpen, Flower2, Tag, Pencil, CalendarClock, Eye,
+} from "lucide-react";
+import {
+  db, useAuth, blogExcerpt, isScheduled, youTubeEmbed, youTubeThumb, countBlogView, type BlogDoc,
+} from "@/lib/firebase";
+import { useToast } from "@/components/ui/Toast";
+import i18n from "@nablis/i18n";
+import { dateLocale } from "@/lib/locale";
+import { PageTitle } from "@/components/PageTitle";
+import { useTranslation } from "@nablis/i18n";
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-function fmtDate(ts: Timestamp | null | undefined) {
-  if (!ts) return "";
-  try {
-    return ts.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  } catch { return ""; }
-}
-function timeAgo(ts: Timestamp | null | undefined) {
-  if (!ts) return "";
-  try {
-    const d = Date.now() - ts.toDate().getTime();
-    const days = Math.floor(d / 86400000);
-    if (days > 0) return `${days}d ago`;
-    const hrs = Math.floor(d / 3600000);
-    return hrs > 0 ? `${hrs}h ago` : "Just now";
-  } catch { return ""; }
-}
-function excerpt(s: string, n = 120) {
-  return s.length <= n ? s : s.slice(0, n).trimEnd() + "…";
-}
+type Filter = "all" | "latest" | "most" | "favorites";
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "all", label: "All" }, { key: "latest", label: "Latest Articles" },
+  { key: "most", label: "Most Read" }, { key: "favorites", label: "Favorites" },
+];
 
-// ── Featured article card ─────────────────────────────────────────────────────
-function FeaturedCard({ post }: { post: BlogPost }) {
-  return (
-    <div className="bg-white rounded-2xl overflow-hidden border border-[#E5E7EB] shadow-sm group">
-      <div className="aspect-[16/9] bg-gradient-to-br from-[#1B2E6B] to-[#2a4499] overflow-hidden">
-        {post.imageURL ? (
-          <img src={post.imageURL} alt={post.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <BookOpen size={40} className="text-white/20" />
-          </div>
-        )}
-      </div>
-      <div className="p-5">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#F5C518]/20 text-[#1B2E6B]">
-            {post.category}
-          </span>
-          {post.pinned && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#1B2E6B] text-white">FEATURED</span>
-          )}
-        </div>
-        <h3 className="text-[#1B2E6B] font-bold text-sm mb-1.5 line-clamp-2">{post.title}</h3>
-        <p className="text-[#6B7280] text-xs leading-relaxed mb-3 line-clamp-2">{excerpt(post.content)}</p>
-        <div className="flex items-center justify-between">
-          <span className="text-[#9CA3AF] text-[10px]">{fmtDate(post.publishAt ?? post.createdAt)}</span>
-          <Link href={`/blogs/${post.id}`} className="text-xs font-semibold text-[#1B2E6B] hover:text-[#F5C518] transition-colors">
-            Read more →
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
+const CATEGORY_STYLE: Record<string, { Icon: typeof Tag; cls: string }> = {
+  "Spiritual Education": { Icon: GraduationCap, cls: "bg-[#DBEAFE] text-[#1D4ED8]" },
+  "Family Support":      { Icon: Users,         cls: "bg-[#FCE7F3] text-[#DB2777]" },
+  "Bible Study":         { Icon: BookOpen,      cls: "bg-[#FEF3C7] text-[#D97706]" },
+  "Wellness & Prayer":   { Icon: Flower2,       cls: "bg-[#F3E8FF] text-[#9333EA]" },
+};
+const DEFAULT_CATEGORIES = Object.keys(CATEGORY_STYLE);
+
+function ago(b: BlogDoc) {
+  const d = (b.publishAt ?? b.createdAt)?.toDate?.();
+  if (!d) return "";
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 60) return i18n.t("time.minsAgo", { count: Math.max(mins, 1) });
+  const h = Math.floor(mins / 60);
+  if (h < 24) return i18n.t("time.hoursAgo", { count: h });
+  const days = Math.floor(h / 24);
+  if (days < 7) return i18n.t("time.daysAgo", { count: days });
+  const w = Math.floor(days / 7);
+  return w < 5 ? i18n.t("time.weeksAgo", { count: w }) : d.toLocaleDateString(dateLocale(), { month: "short", day: "numeric" });
+}
+function thumb(b: BlogDoc) {
+  return b.imageURL || youTubeThumb(b.videoURL) || null;
+}
+function CategoryPill({ c, small = false }: { c: string; small?: boolean }) {
+  return <span className={`inline-block rounded-full bg-[#F1F4F9] border border-[#E5E7EB] font-semibold tracking-wider uppercase text-[#4B5563] ${small ? "px-2 py-0.5 text-[9px]" : "px-3 py-1 text-[10px]"}`}>{i18n.t(`blogCat.${c}`, { defaultValue: c })}</span>;
 }
 
-// ── Small article card ────────────────────────────────────────────────────────
-function SmallCard({ post }: { post: BlogPost }) {
-  return (
-    <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-4 flex gap-4 group hover:shadow-md transition-shadow">
-      <div className="w-20 h-20 rounded-xl overflow-hidden bg-[#EEF1F8] flex-shrink-0">
-        {post.imageURL ? (
-          <img src={post.imageURL} alt={post.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center"><BookOpen size={20} className="text-[#9CA3AF]" /></div>
-        )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <span className="text-[10px] font-bold text-[#1B2E6B] bg-[#EEF1F8] px-2 py-0.5 rounded-full">{post.category}</span>
-        <h4 className="text-[#1B2E6B] font-semibold text-xs mt-1.5 mb-1 line-clamp-2">{post.title}</h4>
-        <p className="text-[#9CA3AF] text-[10px]">{fmtDate(post.publishAt ?? post.createdAt)}</p>
-      </div>
-    </div>
-  );
-}
-
-// ── Video card ────────────────────────────────────────────────────────────────
-function VideoFeatured({ post }: { post: BlogPost }) {
-  return (
-    <div className="bg-[#1B2E6B] rounded-2xl overflow-hidden relative aspect-[16/9] flex items-end">
-      {post.imageURL && (
-        <img src={post.imageURL} alt={post.title} className="absolute inset-0 w-full h-full object-cover opacity-40" />
-      )}
-      <div className="relative p-5 w-full bg-gradient-to-t from-black/80 to-transparent">
-        <div className="w-10 h-10 rounded-full bg-[#F5C518] flex items-center justify-center mb-3">
-          <Play size={16} className="text-[#1B2E6B] ml-0.5" />
-        </div>
-        <p className="text-white font-bold text-sm line-clamp-2">{post.title}</p>
-        <p className="text-white/50 text-xs mt-1">{post.authorName}</p>
-      </div>
-    </div>
-  );
-}
-
-const FILTER_TABS = ["All", "Latest", "Most Read", "Favorites"] as const;
-type FilterTab = (typeof FILTER_TABS)[number];
-
-// ── Page ─────────────────────────────────────────────────────────────────────
 export default function BlogsPage() {
+  const { t } = useTranslation();
   const { user, role } = useAuth();
-  const isAdminOrSuperAdmin = role === "admin" || role === "super_admin";
-  const [posts, setPosts]         = useState<BlogPost[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [filterTab, setFilterTab] = useState<FilterTab>("All");
+  const isStaff = role === "admin" || role === "super_admin";
+  const toast = useToast();
+  const [posts, setPosts]     = useState<BlogDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter]   = useState<Filter>("all");
+  const [category, setCategory] = useState<string | null>(null);
+  const [shown, setShown]     = useState(6);
+  const [allVideos, setAllVideos] = useState(false);
+  const [playing, setPlaying] = useState<BlogDoc | null>(null);
+  const [picking, setPicking] = useState(false);
+  const teachingsRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    getDocs(query(collection(db, "blogPosts"), orderBy("createdAt", "desc")))
-      .then((snap) => setPosts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BlogPost))))
-      .finally(() => setLoading(false));
-  }, []);
+  useEffect(() => onSnapshot(collection(db, "blogPosts"), (snap) => {
+    setPosts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BlogDoc))
+      .filter((b) => b.status !== "draft")
+      .sort((a, b) => ((b.publishAt ?? b.createdAt)?.toMillis?.() ?? 0) - ((a.publishAt ?? a.createdAt)?.toMillis?.() ?? 0)));
+    setLoading(false);
+  }, () => setLoading(false)), []);
 
-  const featured  = posts.filter((p) => p.pinned);
-  const grid      = posts.filter((p) => !p.pinned).slice(0, 6);
-  const videos    = posts.filter((p) => p.videoURL).slice(0, 4);
-  const teachings = filterTab === "Latest" ? [...posts].slice(0, 5)
-    : filterTab === "Most Read" ? [...posts].reverse().slice(0, 5)
-    : posts.slice(0, 5);
+  const favorites = new Set<string>(((user as unknown as { favoriteBlogs?: string[] })?.favoriteBlogs) ?? []);
+  const visible = useMemo(() => posts.filter((b) => isStaff || !isScheduled(b)), [posts, isStaff]);
+  const featured = useMemo(() => {
+    const pinned = visible.filter((b) => b.pinned);
+    return (pinned.length ? pinned : visible).slice(0, 2);
+  }, [visible]);
+
+  const teachings = useMemo(() => {
+    let list = visible.filter((b) => !b.videoURL || b.imageURL);
+    if (category) list = list.filter((b) => b.category === category);
+    if (filter === "most") list = [...list].sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
+    if (filter === "favorites") list = list.filter((b) => favorites.has(b.id));
+    if (filter === "latest") list = list.filter((b) => ((b.publishAt ?? b.createdAt)?.toMillis?.() ?? 0) > Date.now() - 30 * 86400000);
+    return list;
+  }, [visible, filter, category, favorites]);
+
+  const videos = visible.filter((b) => !!b.videoURL);
+  const heroVideo = videos[0];
+  const moreVideos = allVideos ? videos.slice(1) : videos.slice(1, 5);
+  const categories = Array.from(new Set([...DEFAULT_CATEGORIES, ...visible.map((b) => b.category).filter(Boolean)]));
+
+  async function toggleFavorite(b: BlogDoc) {
+    if (!user) return;
+    const has = favorites.has(b.id);
+    await updateDoc(doc(db, "users", user.id), { favoriteBlogs: has ? arrayRemove(b.id) : arrayUnion(b.id) });
+    toast({ message: has ? t("blogsPage.unfavorited") : t("blogsPage.favorited") });
+  }
+
+  function watch(b: BlogDoc) {
+    setPlaying(b);
+    countBlogView(b.id);
+  }
+
+  function chooseCategory(c: string) {
+    setCategory((cur) => (cur === c ? null : c));
+    teachingsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   if (!user) return null;
 
   return (
-    <div className="space-y-7">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-12">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-[#1B2E6B]">Blogs</h1>
-          <p className="text-[#9CA3AF] text-sm mt-0.5">Manage spiritual teachings and articles</p>
+          <PageTitle id="blogs" />
         </div>
-        {isAdminOrSuperAdmin && (
-          <div className="flex gap-2">
-            <Link href="/blogs/create"
-              className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
-              <Plus size={15} /> Create New Blog
-            </Link>
-            {posts.length > 0 && (
-              <Link href={`/blogs/${posts[0]?.id}/update`}
-                className="flex items-center gap-1.5 bg-[#EEF1F8] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#dde3f0] transition-colors">
-                <Pencil size={14} /> Update Existing Blog
-              </Link>
-            )}
+        {isStaff && (
+          <div className="flex gap-3">
+            <Link href="/blogs/create" className="px-6 py-3 rounded-full bg-[#1E3A8A] text-white text-sm font-semibold shadow-[0_10px_24px_-12px_rgba(30,58,138,0.9)] hover:bg-[#1B2E6B]">{t("blogsPage.create")}</Link>
+            <button onClick={() => setPicking(true)} className="px-6 py-3 rounded-full bg-[#1E3A8A] text-white text-sm font-semibold shadow-[0_10px_24px_-12px_rgba(30,58,138,0.9)] hover:bg-[#1B2E6B]">{t("blogsPage.update")}</button>
           </div>
         )}
       </div>
 
       {loading ? (
-        <div className="py-16 text-center"><div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" /></div>
+        <div className="py-16"><div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" /></div>
+      ) : visible.length === 0 ? (
+        <div className="bg-white rounded-2xl p-12 text-center text-[#9CA3AF]">{t("blogsPage.noPosts")}</div>
       ) : (
         <>
-          {/* Featured articles grid */}
-          {featured.length > 0 && (
-            <section>
-              <h2 className="text-[#1B2E6B] font-semibold text-sm mb-4">Featured Articles</h2>
-              <div className="grid sm:grid-cols-2 gap-4">
-                {featured.slice(0, 2).map((p) => <FeaturedCard key={p.id} post={p} />)}
-              </div>
-            </section>
-          )}
+          {/* Featured */}
+          <div className="grid md:grid-cols-2 gap-6">
+            {featured.map((b) => (
+              <Link key={b.id} href={`/blogs/${b.id}`} className="group bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex min-h-[250px]">
+                <div className="w-[45%] flex-shrink-0 bg-[#EEF1F8] overflow-hidden">
+                  {thumb(b) ? <img src={thumb(b)!} alt={b.imageAlt ?? ""} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" /> : <div className="w-full h-full flex items-center justify-center text-[#1B2E6B]/30"><BookOpen size={40} /></div>}
+                </div>
+                <div className="p-6 flex flex-col">
+                  <CategoryPill c={b.category} />
+                  <p className="text-xl font-semibold text-[#111827] mt-3 leading-snug line-clamp-2">{b.title}</p>
+                  <p className="text-sm text-[#6B7280] mt-3 line-clamp-4 flex-1">{blogExcerpt(b, 140)}</p>
+                  <span className="flex items-center gap-1 text-sm font-semibold text-[#1E3A8A] mt-3">{t("blogsPage.readMore")} <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" /></span>
+                </div>
+              </Link>
+            ))}
+          </div>
 
-          {/* Teachings for you */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-[#1B2E6B] font-semibold text-sm">Teachings for You</h2>
-              <div className="flex gap-1 bg-white rounded-xl border border-[#E5E7EB] p-1">
-                {FILTER_TABS.map((t) => (
-                  <button key={t} onClick={() => setFilterTab(t)}
-                    className={[
-                      "px-3 py-1 rounded-lg text-xs font-medium transition-colors",
-                      filterTab === t ? "bg-[#1B2E6B] text-white" : "text-[#6B7280] hover:text-[#1B2E6B]",
-                    ].join(" ")}>
-                    {t}
-                  </button>
-                ))}
-              </div>
+          {/* Teachings */}
+          <section ref={teachingsRef} className="scroll-mt-24">
+            <div className="text-center">
+              <h2 className="font-display text-3xl font-bold text-[#111827]">{t("blogsPage.teachingsFor")} <span className="text-[#1E3A8A]">{t("blogsPage.you")}</span></h2>
+              <p className="text-[#374151] mt-2">{t("blogsPage.teachingsHint")}</p>
             </div>
+            <div className="flex flex-wrap justify-center gap-3 mt-7">
+              {FILTERS.map((f) => (
+                <button key={f.key} onClick={() => { setFilter(f.key); setShown(6); }}
+                  className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all ${filter === f.key ? "bg-[#1E3A8A] text-white shadow-[0_8px_18px_-8px_rgba(30,58,138,0.8)]" : "bg-white text-[#111827] hover:bg-[#EEF1F8]"}`}>
+                  {t(`blogsPage.filter.${f.key}`)}
+                </button>
+              ))}
+            </div>
+            {category && (
+              <div className="flex justify-center mt-4">
+                <button onClick={() => setCategory(null)} className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1E3A8A]/10 text-xs font-semibold text-[#1E3A8A]">
+                  {category} <X size={12} />
+                </button>
+              </div>
+            )}
             {teachings.length === 0 ? (
-              <p className="text-[#9CA3AF] text-sm">No posts yet.</p>
+              <p className="text-center text-sm text-[#4B5563] mt-10">{filter === "favorites" ? t("blogsPage.favEmpty") : t("blogsPage.nothing")}</p>
             ) : (
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {teachings.map((p) => <SmallCard key={p.id} post={p} />)}
-              </div>
-            )}
-          </section>
-
-          {/* Videos for you */}
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <Film size={16} className="text-[#1B2E6B]" />
-              <h2 className="text-[#1B2E6B] font-semibold text-sm">Videos for You</h2>
-            </div>
-            {videos.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6 text-center text-[#9CA3AF] text-sm">
-                No video content yet. Add video URLs when creating a blog post.
-              </div>
-            ) : (
-              <div className="grid lg:grid-cols-3 gap-4">
-                <div className="lg:col-span-2">
-                  <VideoFeatured post={videos[0]} />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[#9CA3AF] text-xs font-semibold uppercase tracking-wide mb-2">More Videos</p>
-                  {videos.slice(1).map((p) => (
-                    <div key={p.id} className="flex items-center gap-3 bg-white rounded-xl border border-[#E5E7EB] p-3 hover:shadow-sm transition-shadow">
-                      <div className="w-12 h-12 rounded-lg bg-[#1B2E6B] flex items-center justify-center flex-shrink-0">
-                        <Play size={14} className="text-[#F5C518] ml-0.5" />
+              <div className="grid md:grid-cols-2 gap-6 mt-8 stagger">
+                {teachings.slice(0, shown).map((b) => (
+                  <div key={b.id} className="group bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-lg transition-shadow duration-300 flex min-h-[140px] relative">
+                    <Link href={`/blogs/${b.id}`} className="w-40 sm:w-44 flex-shrink-0 bg-[#EEF1F8] overflow-hidden">
+                      {thumb(b) ? <img src={thumb(b)!} alt={b.imageAlt ?? ""} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" /> : <div className="w-full h-full flex items-center justify-center text-[#1B2E6B]/30"><BookOpen size={30} /></div>}
+                    </Link>
+                    <div className="p-5 flex flex-col min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <CategoryPill c={b.category} small />
+                        {isScheduled(b) && <span className="flex items-center gap-1 text-[10px] font-bold text-[#A16207]"><CalendarClock size={11} /> {t("blogsPage.scheduled")}</span>}
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-[#374151] text-xs font-medium line-clamp-2">{p.title}</p>
-                        <p className="text-[#9CA3AF] text-[10px] mt-0.5">{timeAgo(p.createdAt)}</p>
+                      <Link href={`/blogs/${b.id}`} className="text-[17px] font-semibold text-[#111827] mt-2 line-clamp-1 hover:text-[#1E3A8A]">{b.title}</Link>
+                      <p className="text-xs text-[#6B7280] mt-1 line-clamp-2">{blogExcerpt(b, 110)}</p>
+                      <div className="flex items-center gap-4 mt-auto pt-2">
+                        <Link href={`/blogs/${b.id}`} className="flex items-center text-xs font-semibold text-[#1E3A8A]">{t("blogsPage.readMore")} <ChevronRight size={13} /></Link>
+                        {(b.views ?? 0) > 0 && <span className="flex items-center gap-1 text-[11px] text-[#9CA3AF]"><Eye size={11} /> {b.views}</span>}
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* Featured teachings row */}
-          {grid.length > 0 && (
-            <section>
-              <h2 className="text-[#1B2E6B] font-semibold text-sm mb-4">All Articles</h2>
-              <div className="space-y-2">
-                {grid.map((p, i) => (
-                  <div key={p.id} className="bg-white rounded-2xl border border-[#E5E7EB] p-4 flex items-center gap-4 hover:shadow-sm transition-shadow group">
-                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#EEF1F8] flex-shrink-0">
-                      {p.imageURL ? (
-                        <img src={p.imageURL} alt={p.title} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-lg">{["📖","🙏","✝️","📜","🕊️"][i % 5]}</div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[#1B2E6B] font-semibold text-sm line-clamp-1">{p.title}</p>
-                      <div className="flex items-center gap-3 mt-1">
-                        <span className="text-[#9CA3AF] text-[10px] flex items-center gap-1"><Eye size={10} /> {Math.floor(Math.random() * 500 + 50)} views</span>
-                        <span className="text-[#9CA3AF] text-[10px]">{timeAgo(p.createdAt)}</span>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 flex-shrink-0">
-                      <Link href={`/blogs/${p.id}`} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#1B2E6B] bg-[#EEF1F8] hover:bg-[#1B2E6B] hover:text-white transition-colors">View</Link>
-                      {isAdminOrSuperAdmin && (
-                        <Link href={`/blogs/${p.id}/update`} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#6B7280] border border-[#E5E7EB] hover:bg-[#EEF1F8] transition-colors">Edit</Link>
-                      )}
-                    </div>
+                    <button onClick={() => toggleFavorite(b)} aria-label={favorites.has(b.id) ? t("blogsPage.removeFav") : t("blogsPage.addFav")}
+                      className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center shadow-sm hover:scale-110 transition-transform">
+                      <Heart size={15} className={favorites.has(b.id) ? "fill-[#E11D48] text-[#E11D48]" : "text-[#9CA3AF]"} />
+                    </button>
+                    {isStaff && (
+                      <Link href={`/blogs/${b.id}/update`} className="absolute top-3 right-12 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center shadow-sm text-[#6B7280] hover:text-[#1E3A8A]" aria-label={t("common.edit")}>
+                        <Pencil size={13} />
+                      </Link>
+                    )}
                   </div>
                 ))}
               </div>
-            </section>
-          )}
+            )}
+            {teachings.length > shown && (
+              <div className="flex justify-center mt-8">
+                <button onClick={() => setShown((n) => n + 6)} className="px-6 py-2.5 rounded-full bg-white text-sm font-semibold text-[#1E3A8A] shadow-sm hover:shadow-md">{t("blogsPage.showMore")}</button>
+              </div>
+            )}
+          </section>
+
+          {/* Videos */}
+          <section>
+            <div className="text-center">
+              <h2 className="font-display text-3xl font-bold text-[#111827]">{t("blogsPage.videos")}</h2>
+              <p className="text-[#374151] mt-2">{t("blogsPage.videosHint")}</p>
+            </div>
+            <div className="grid xl:grid-cols-[1fr_220px] gap-8 mt-8 items-start">
+              <div className="space-y-8 min-w-0">
+                {heroVideo ? (
+                  <div className="relative rounded-3xl overflow-hidden min-h-[340px] flex items-end shadow-xl">
+                    {thumb(heroVideo) ? <img src={thumb(heroVideo)!} alt="" className="absolute inset-0 w-full h-full object-cover" /> : <div className="absolute inset-0 bg-gradient-to-br from-[#1B2E6B] to-[#0B1430]" />}
+                    <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/50 to-black/10" />
+                    <div className="relative p-8 sm:p-10 text-white max-w-xl">
+                      <span className="px-2.5 py-1 rounded-full bg-[#F5C518] text-[#111827] text-[10px] font-bold">{t("blogsPage.newTeaching")}</span>
+                      <p className="font-display text-3xl sm:text-4xl font-bold leading-tight mt-4">{heroVideo.title}</p>
+                      <p className="text-white/85 mt-3 line-clamp-2">{blogExcerpt(heroVideo, 150)}</p>
+                      <div className="flex gap-3 mt-6">
+                        <button onClick={() => watch(heroVideo)} className="flex items-center gap-2 px-6 py-3 rounded-full bg-[#F5C518] text-[#111827] font-semibold hover:bg-[#e6b800]"><Play size={16} fill="currentColor" /> {t("blogsPage.watchNow")}</button>
+                        <Link href={`/blogs/${heroVideo.id}`} className="px-6 py-3 rounded-full bg-white/10 border border-white/30 font-semibold hover:bg-white/20">{t("blogsPage.details")}</Link>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-3xl p-10 text-center text-[#9CA3AF]">{t("blogsPage.noVideos")}</div>
+                )}
+
+                {moreVideos.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-lg font-semibold text-[#111827]">{t("blogsPage.featured")}</p>
+                      {videos.length > 5 && <button onClick={() => setAllVideos((v) => !v)} className="text-sm font-semibold text-[#1E3A8A] hover:underline">{allVideos ? t("blogsPage.showLess") : t("events.viewAll")}</button>}
+                    </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+                      {moreVideos.map((v) => (
+                        <button key={v.id} onClick={() => watch(v)} className="group text-left">
+                          <div className="relative aspect-video rounded-xl overflow-hidden bg-[#1B2E6B]">
+                            {thumb(v) && <img src={thumb(v)!} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />}
+                            <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
+                              <span className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Play size={16} className="text-[#111827] ml-0.5" fill="currentColor" /></span>
+                            </span>
+                          </div>
+                          <div className="flex gap-2.5 mt-3">
+                            {v.authorPhotoURL ? <img src={v.authorPhotoURL} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" /> : <span className="w-8 h-8 rounded-full bg-[#EEF1F8] text-[#1B2E6B] text-xs font-bold flex items-center justify-center flex-shrink-0">{(v.authorName || "?")[0]}</span>}
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-[#111827] line-clamp-2 leading-snug">{v.title}</p>
+                              <p className="text-[11px] text-[#6B7280] mt-0.5">{v.authorName} • {v.views ?? 0} views • {ago(v)}</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Categories */}
+              <div>
+                <p className="text-sm font-bold tracking-widest text-[#111827] mb-4">{t("blogsPage.categories")}</p>
+                <div className="space-y-3">
+                  {categories.map((c) => {
+                    const st = CATEGORY_STYLE[c] ?? { Icon: Tag, cls: "bg-[#F1F4F9] text-[#4B5563]" };
+                    return (
+                      <button key={c} onClick={() => chooseCategory(c)}
+                        className={`w-full flex items-center gap-3 rounded-xl px-2 py-1.5 text-left transition-colors ${category === c ? "bg-white shadow-sm" : "hover:bg-white/60"}`}>
+                        <span className={`w-9 h-9 rounded-full flex items-center justify-center ${st.cls}`}><st.Icon size={16} /></span>
+                        <span className="text-sm font-medium text-[#111827]">{t(`blogCat.${c}`, { defaultValue: c })}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </section>
         </>
+      )}
+
+      {/* Video player */}
+      {playing && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setPlaying(null)}>
+          <div className="w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between text-white mb-3">
+              <p className="font-semibold truncate">{playing.title}</p>
+              <button onClick={() => setPlaying(null)} aria-label={t("common.close")}><X size={22} /></button>
+            </div>
+            {youTubeEmbed(playing.videoURL)
+              ? <iframe src={`${youTubeEmbed(playing.videoURL)}?autoplay=1`} title={playing.title} className="w-full aspect-video rounded-xl" allow="autoplay; encrypted-media" allowFullScreen />
+              : <video src={playing.videoURL ?? undefined} controls autoPlay className="w-full rounded-xl bg-black max-h-[75vh]" />}
+            <Link href={`/blogs/${playing.id}`} className="inline-block mt-3 text-sm font-semibold text-[#F5C518] hover:underline">{t("blogsPage.readFull")}</Link>
+          </div>
+        </div>
+      )}
+
+      {/* Pick a blog to update */}
+      {picking && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setPicking(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E7EB]">
+              <p className="text-lg font-bold text-[#111827]">{t("blogsPage.choose")}</p>
+              <button onClick={() => setPicking(false)} className="text-[#6B7280]" aria-label={t("common.close")}><X size={18} /></button>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto divide-y divide-[#F3F4F6]">
+              {posts.map((b) => (
+                <Link key={b.id} href={`/blogs/${b.id}/update`} className="flex items-center gap-3 px-6 py-3 hover:bg-[#F9FAFB]">
+                  {thumb(b) ? <img src={thumb(b)!} alt="" className="w-12 h-12 rounded-lg object-cover" /> : <span className="w-12 h-12 rounded-lg bg-[#EEF1F8]" />}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-[#111827] truncate">{b.title}</p>
+                    <p className="text-xs text-[#6B7280]">{b.category} · {ago(b)}{isScheduled(b) ? " · scheduled" : ""}</p>
+                  </div>
+                  <Pencil size={14} className="text-[#9CA3AF]" />
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

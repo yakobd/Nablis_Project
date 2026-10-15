@@ -5,16 +5,19 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDocs, query, setDoc, serverTimestamp, where } from 'firebase/firestore';
+import { notify } from '@nablis/shared/firebase';
 import { auth, db } from '../../lib/firebase';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { themedStyles, themedColors } from "../../theme";
 
-const C = {
+const L = {
   navy: '#1B2E6B', yellow: '#F5C518', light: '#EEF1F8',
   grey: '#9CA3AF', dark: '#374151', border: '#E5E7EB',
   white: '#FFFFFF', bg: '#F9FAFB', red: '#DC2626',
 };
+const C = themedColors(L);
 
 const FIELDS = {
   fullName:           '',
@@ -114,6 +117,19 @@ export default function RegisterScreen() {
         christianName:       form.christianName.trim(),
         createdAt:           serverTimestamp(),
       });
+      // Let the Spiritual Father know someone is waiting for approval (as on the web).
+      try {
+        const fathers = await getDocs(query(collection(db, 'users'), where('role', '==', 'super_admin')));
+        await notify(fathers.docs.map((a) => ({
+          userId: a.id,
+          type: 'new_member',
+          title: 'New Member Registration',
+          description: `${form.fullName.trim()} has registered and is awaiting approval.`,
+          link: '/settings/members/new',
+        })));
+      } catch {
+        // The registration itself succeeded; the alert is best-effort.
+      }
       // Auth guard in _layout.tsx will detect pending status and navigate to /pending
     } catch (err: any) {
       const msg =
@@ -199,21 +215,21 @@ export default function RegisterScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root:           { flex: 1, backgroundColor: C.bg },
+const styles = themedStyles({
+  root:           { flex: 1, backgroundColor: L.bg },
   scroll:         { flex: 1 },
   content:        { paddingHorizontal: 24, alignItems: 'center' },
-  backBtn:        { alignSelf: 'flex-start', width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border, marginBottom: 16 },
+  backBtn:        { alignSelf: 'flex-start', width: 36, height: 36, borderRadius: 10, backgroundColor: L.white, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: L.border, marginBottom: 16 },
   logo:           { width: 90, height: 90, resizeMode: 'contain', marginBottom: 8 },
-  title:          { fontSize: 24, fontWeight: '800', color: C.navy, marginBottom: 6, textAlign: 'center' },
-  subtitle:       { fontSize: 13, color: C.grey, marginBottom: 28, textAlign: 'center', lineHeight: 20 },
+  title:          { fontSize: 24, fontWeight: '800', color: L.navy, marginBottom: 6, textAlign: 'center' },
+  subtitle:       { fontSize: 13, color: L.grey, marginBottom: 28, textAlign: 'center', lineHeight: 20 },
   section:        { width: '100%', maxWidth: 420, marginBottom: 20 },
-  sectionLabel:   { fontSize: 11, fontWeight: '700', color: C.grey, letterSpacing: 0.8, marginBottom: 10, textTransform: 'uppercase' },
-  input:          { backgroundColor: C.white, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 13, marginBottom: 10, fontSize: 15, borderWidth: 1, borderColor: C.border, width: '100%', color: C.dark },
-  button:         { width: '100%', maxWidth: 420, backgroundColor: C.navy, borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  sectionLabel:   { fontSize: 11, fontWeight: '700', color: L.grey, letterSpacing: 0.8, marginBottom: 10, textTransform: 'uppercase' },
+  input:          { backgroundColor: L.white, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 13, marginBottom: 10, fontSize: 15, borderWidth: 1, borderColor: L.border, width: '100%', color: L.dark },
+  button:         { width: '100%', maxWidth: 420, backgroundColor: L.navy, borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
   buttonDisabled: { opacity: 0.6 },
-  buttonText:     { color: C.white, fontSize: 16, fontWeight: '700' },
+  buttonText:     { color: L.white, fontSize: 16, fontWeight: '700' },
   loginLink:      { marginTop: 20, paddingBottom: 8 },
-  loginLinkText:  { color: C.grey, fontSize: 14 },
-  loginLinkBold:  { color: C.navy, fontWeight: '700' },
+  loginLinkText:  { color: L.grey, fontSize: 14 },
+  loginLinkBold:  { color: L.navy, fontWeight: '700' },
 });

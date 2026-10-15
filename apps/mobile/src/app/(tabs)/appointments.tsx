@@ -4,34 +4,34 @@ import {
   TextInput, ActivityIndicator, Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  collection, query, where, getDocs, addDoc, updateDoc, doc,
-  serverTimestamp, Timestamp,
-} from "firebase/firestore";
+import { collection, query, where, getDocs, documentId, Timestamp } from "firebase/firestore";
 import { db } from '../../lib/firebase';
-import { useAuth } from '@nablis/shared/firebase';
+import { decideAppointment } from '../../lib/appointments';
+import {
+  useAuth, useAvailability, notify, bookAppointment, closeAppointment, formatTime12,
+  slotsForDate, isDayClosed, SERVICE_TYPES, SLOT_TIMES, serviceLabel, type ServiceType,
+} from '@nablis/shared/firebase';
 import { Ionicons } from "@expo/vector-icons";
 import { AppointmentCard } from "../../components/AppointmentCard";
 import { BottomSheet } from "../../components/BottomSheet";
 import { Avatar } from "../../components/Avatar";
 import { SidebarDrawer } from "../../components/SidebarDrawer";
+import { themedStyles, themedColors } from "../../theme";
 
-const C = {
+const L = {
   navy: "#1B2E6B", yellow: "#F5C518", light: "#EEF1F8",
   grey: "#9CA3AF", dark: "#374151", border: "#E5E7EB",
   white: "#FFFFFF", bg: "#F9FAFB",
 };
-
-const SERVICE_TYPES = [
-  "Confession", "Spiritual Counseling", "Group Bible Study",
-  "Youth Guidance", "Prayer Session", "Other",
-];
+const C = themedColors(L);
 
 interface AppointmentDoc {
   id: string;
   serviceType: string;
   status: string;
   date?: Timestamp | null;
+  time?: string;
+  slotId?: string | null;
   privateNote?: string;
   note?: string;
   userId: string;
@@ -101,13 +101,11 @@ function AdminAppointments() {
   const pendingCount = appointments.filter((a) => a.status === "pending").length;
 
   async function handleAction(id: string, status: "confirmed" | "rejected") {
+    const apt = appointments.find((a) => a.id === id);
+    if (!apt) return;
     setActionId(id);
     try {
-      await updateDoc(doc(db, "appointments", id), {
-        status,
-        notified:  true,
-        updatedAt: serverTimestamp(),
-      });
+      await decideAppointment(apt, status);
       Alert.alert("Done", status === "confirmed" ? "Appointment confirmed." : "Appointment rejected.");
       await load();
     } catch {
@@ -172,13 +170,13 @@ function AdminAppointments() {
                 <Avatar name={a.memberName || a.userName || "M"} size={32} />
                 <View style={styles.adminCardInfo}>
                   <Text style={styles.adminCardName}>{a.memberName || a.userName || "Member"}</Text>
-                  <Text style={styles.adminCardType}>{a.serviceType}</Text>
+                  <Text style={styles.adminCardType}>{serviceLabel(a.serviceType)}</Text>
                 </View>
                 <StatusBadge status={a.status} />
               </View>
               {a.date && (
                 <Text style={styles.adminCardDate}>
-                  {fmtDate(a.date)}
+                  {fmtDate(a.date)}{a.time ? ` · ${a.time}` : ""}
                 </Text>
               )}
               {(a.privateNote || a.note) ? (
@@ -230,17 +228,36 @@ function MemberAppointments() {
   const [showBook, setShowBook]     = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const [service,    setService]    = useState(SERVICE_TYPES[0]);
+  const [service,    setService]    = useState<ServiceType>(SERVICE_TYPES[0].value);
   const [dateStr,    setDateStr]    = useState("");
   const [timeStr,    setTimeStr]    = useState("");
   const [noteText,   setNoteText]   = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [customMode, setCustomMode] = useState(false);
+  const { availability } = useAvailability();
+
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim()) && !isNaN(new Date(`${dateStr.trim()}T00:00`).getTime());
+  const daySlots = validDate ? slotsForDate(availability, dateStr.trim()) : [...SLOT_TIMES];
+  const dayClosed = validDate && isDayClosed(availability, dateStr.trim());
+  const customAllowed = availability.allowCustomTimes && !dayClosed;
+
+  // Slots already booked on the chosen date (appointmentSlots ids are {date}_{HHMM}), shown as taken.
+  const [taken, setTaken] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!validDate) { setTaken(new Set()); return; }
+    const iso = dateStr.trim();
+    getDocs(query(collection(db, "appointmentSlots"), where(documentId(), ">=", `${iso}_`), where(documentId(), "<=", `${iso}_~`)))
+      .then((snap) => setTaken(new Set(snap.docs.map((d) => d.id))))
+      .catch(() => setTaken(new Set()));
+  }, [dateStr, validDate]); // eslint-disable-line react-hooks/exhaustive-deps
+  const isTaken = (t: string) => taken.has(`${dateStr.trim()}_${t.replace(":", "")}`);
 
   async function load() {
     if (!user) return;
     setLoading(true);
     try {
-      const q = query(collection(db, "appointments"), where("userId", "==", user.id));
+      // memberId is set by both web and mobile bookings (userId only by mobile).
+      const q = query(collection(db, "appointments"), where("memberId", "==", user.id));
       const snap = await getDocs(q);
       const apts = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AppointmentDoc));
       apts.sort((a, b) => {
@@ -268,38 +285,55 @@ function MemberAppointments() {
 
   async function handleBook() {
     if (!user || !service) return;
+    const isoDate = dateStr.trim();
+    const when = new Date(`${isoDate}T${timeStr || "00:00"}`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate) || isNaN(when.getTime())) {
+      Alert.alert("Invalid date", "Please enter the date as YYYY-MM-DD.");
+      return;
+    }
+    if (dayClosed) {
+      Alert.alert("Not available", "The Father is not available on this day. Please choose another date.");
+      return;
+    }
+    if (!/^\d{2}:\d{2}$/.test(timeStr)) {
+      Alert.alert("Choose a time", customMode ? "Enter the time as HH:MM (e.g. 14:30)." : "Please pick one of the available times.");
+      return;
+    }
+    if (when <= new Date()) {
+      Alert.alert("Invalid time", "Please choose a time in the future.");
+      return;
+    }
     setSubmitting(true);
     try {
-      let dateTs: Timestamp | null = null;
-      if (dateStr && timeStr) {
-        const combined = new Date(`${dateStr}T${timeStr}`);
-        if (!isNaN(combined.getTime())) dateTs = Timestamp.fromDate(combined);
-      } else if (dateStr) {
-        const d = new Date(dateStr);
-        if (!isNaN(d.getTime())) dateTs = Timestamp.fromDate(d);
-      }
-      await addDoc(collection(db, "appointments"), {
-        userId:      user.id,
+      await bookAppointment({
         memberId:    user.id,
-        userName:    user.displayName || user.email,
         memberName:  user.displayName || user.email,
         serviceType: service,
-        date:        dateTs,
-        privateNote: noteText.trim() || null,
-        status:      "pending",
-        createdAt:   serverTimestamp(),
+        isoDate,
+        time:        timeStr,
+        privateNote: noteText,
+        customTime:  customMode,
       });
+      const fathers = await getDocs(query(collection(db, "users"), where("role", "==", "super_admin")));
+      await notify(fathers.docs.map((d) => ({
+        userId: d.id, type: "appointment_request", link: "/appointment",
+        title: "New appointment request",
+        description: `${user.displayName || "A member"} requested a ${serviceLabel(service)} session on ${isoDate} at ${formatTime12(timeStr)}.`,
+      })));
       setShowBook(false);
-      setService(SERVICE_TYPES[0]);
+      setService(SERVICE_TYPES[0].value);
       setDateStr(""); setTimeStr(""); setNoteText("");
+      Alert.alert("Booking Request Sent!", "Please wait for confirmation. Peace be with you.");
       load();
+    } catch {
+      Alert.alert("Time not available", "That time was just taken. Please choose another time.");
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleCancel(id: string) {
-    await updateDoc(doc(db, "appointments", id), { status: "cancelled" });
+  async function handleCancel(apt: AppointmentDoc) {
+    await closeAppointment(apt, "cancelled");
     load();
   }
 
@@ -359,7 +393,7 @@ function MemberAppointments() {
               key={a.id}
               appointment={a}
               isPast={tab === "past"}
-              onCancel={tab === "upcoming" ? () => handleCancel(a.id) : undefined}
+              onCancel={tab === "upcoming" ? () => handleCancel(a) : undefined}
               onReschedule={tab === "upcoming" ? () => setShowBook(true) : undefined}
             />
           ))}
@@ -376,11 +410,11 @@ function MemberAppointments() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.serviceRow}>
           {SERVICE_TYPES.map((s) => (
             <TouchableOpacity
-              key={s}
-              style={[styles.serviceChip, service === s && styles.serviceChipActive]}
-              onPress={() => setService(s)}
+              key={s.value}
+              style={[styles.serviceChip, service === s.value && styles.serviceChipActive]}
+              onPress={() => setService(s.value)}
             >
-              <Text style={[styles.serviceChipTxt, service === s && styles.serviceChipTxtActive]}>{s}</Text>
+              <Text style={[styles.serviceChipTxt, service === s.value && styles.serviceChipTxtActive]}>{s.label}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -395,13 +429,41 @@ function MemberAppointments() {
         />
 
         <Text style={styles.fieldLabel}>Time</Text>
-        <TextInput
-          style={styles.input}
-          value={timeStr}
-          onChangeText={setTimeStr}
-          placeholder="HH:MM  (e.g. 10:00)"
-          placeholderTextColor={C.grey}
-        />
+        {dayClosed ? (
+          <Text style={styles.closedTxt}>The Father is not available on this day. Please choose another date.</Text>
+        ) : (
+          <View style={styles.slotGrid}>
+            {daySlots.map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[styles.serviceChip, styles.slotChip, !customMode && timeStr === t && styles.serviceChipActive, isTaken(t) && styles.slotTaken]}
+                onPress={() => { setCustomMode(false); setTimeStr(t); }}
+                disabled={isTaken(t)}
+              >
+                <Text style={[styles.serviceChipTxt, !customMode && timeStr === t && styles.serviceChipTxtActive, isTaken(t) && styles.slotTakenTxt]}>{formatTime12(t)}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        {customAllowed && (
+          <>
+            <TouchableOpacity onPress={() => { setCustomMode((v) => !v); setTimeStr(""); }}>
+              <Text style={styles.customToggle}>{customMode ? "Use the listed times" : "Need a different time?"}</Text>
+            </TouchableOpacity>
+            {customMode && (
+              <>
+                <TextInput
+                  style={styles.input}
+                  value={timeStr}
+                  onChangeText={setTimeStr}
+                  placeholder="HH:MM  (e.g. 14:30)"
+                  placeholderTextColor={C.grey}
+                />
+                <Text style={styles.customHint}>{"Sent as a request — the Father will confirm if he's available."}</Text>
+              </>
+            )}
+          </>
+        )}
 
         <Text style={styles.fieldLabel}>Private Note (optional)</Text>
         <TextInput
@@ -435,63 +497,70 @@ export default function AppointmentsScreen() {
   return <MemberAppointments />;
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   root:           { flex: 1, backgroundColor: "#F9FAFB" },
   header:         { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 16, gap: 10 },
-  hamburgerBtn:   { width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
-  hamburgerIcon:  { fontSize: 22, color: C.navy, lineHeight: 26 },
-  title:          { fontSize: 14, color: C.grey, fontWeight: "500" },
-  titleBold:      { fontSize: 20, fontWeight: "800", color: C.navy },
-  bookBtn:        { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.yellow, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 },
-  bookTxt:        { fontSize: 13, fontWeight: "700", color: C.navy },
-  refreshIconBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
+  hamburgerBtn:   { width: 36, height: 36, borderRadius: 10, backgroundColor: L.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: L.border },
+  hamburgerIcon:  { fontSize: 22, color: L.navy, lineHeight: 26 },
+  title:          { fontSize: 14, color: L.grey, fontWeight: "500" },
+  titleBold:      { fontSize: 20, fontWeight: "800", color: L.navy },
+  bookBtn:        { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: L.yellow, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 },
+  bookTxt:        { fontSize: 13, fontWeight: "700", color: L.navy },
+  refreshIconBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: L.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: L.border },
 
   // Admin filter
   filterScroll:   { maxHeight: 48, marginBottom: 8 },
   filterContent:  { paddingHorizontal: 16, gap: 8, alignItems: "center" },
-  filterChip:     { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: C.white, borderWidth: 1, borderColor: C.border },
-  filterChipActive:{ backgroundColor: C.navy, borderColor: C.navy },
-  filterChipTxt:  { fontSize: 12, fontWeight: "600", color: C.grey },
-  filterChipTxtActive:{ color: C.white },
+  filterChip:     { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: L.white, borderWidth: 1, borderColor: L.border },
+  filterChipActive:{ backgroundColor: L.navy, borderColor: L.navy },
+  filterChipTxt:  { fontSize: 12, fontWeight: "600", color: L.grey },
+  filterChipTxtActive:{ color: L.white },
 
   // Admin card
-  adminCard:       { backgroundColor: C.white, borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: C.border },
+  adminCard:       { backgroundColor: L.white, borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: L.border },
   adminCardTop:    { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
   adminCardInfo:   { flex: 1 },
-  adminCardName:   { fontSize: 13, fontWeight: "700", color: C.dark },
-  adminCardType:   { fontSize: 11, color: C.grey },
-  adminCardDate:   { fontSize: 12, color: C.navy, marginBottom: 4 },
-  adminCardNote:   { fontSize: 12, color: C.grey, fontStyle: "italic", marginBottom: 8 },
+  adminCardName:   { fontSize: 13, fontWeight: "700", color: L.dark },
+  adminCardType:   { fontSize: 11, color: L.grey },
+  adminCardDate:   { fontSize: 12, color: L.navy, marginBottom: 4 },
+  adminCardNote:   { fontSize: 12, color: L.grey, fontStyle: "italic", marginBottom: 8 },
   adminCardActions:{ flexDirection: "row", gap: 10 },
   confirmBtn:      { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#16A34A", borderRadius: 10, paddingVertical: 8 },
-  confirmBtnTxt:   { color: C.white, fontSize: 13, fontWeight: "700" },
+  confirmBtnTxt:   { color: L.white, fontSize: 13, fontWeight: "700" },
   rejectBtn:       { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#FEF2F2", borderRadius: 10, paddingVertical: 8, borderWidth: 1, borderColor: "#FECACA" },
   rejectBtnTxt:    { color: "#DC2626", fontSize: 13, fontWeight: "700" },
   badge:           { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
   badgeTxt:        { fontSize: 10, fontWeight: "700" },
 
   // Shared
-  tabs:            { flexDirection: "row", marginHorizontal: 16, backgroundColor: C.white, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 4, marginBottom: 16 },
+  tabs:            { flexDirection: "row", marginHorizontal: 16, backgroundColor: L.white, borderRadius: 12, borderWidth: 1, borderColor: L.border, padding: 4, marginBottom: 16 },
   tabBtn:          { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 9 },
-  tabActive:       { backgroundColor: C.navy },
-  tabTxt:          { fontSize: 13, fontWeight: "600", color: C.grey },
-  tabTxtActive:    { color: C.white },
+  tabActive:       { backgroundColor: L.navy },
+  tabTxt:          { fontSize: 13, fontWeight: "600", color: L.grey },
+  tabTxtActive:    { color: L.white },
   list:            { paddingHorizontal: 16 },
   center:          { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
-  emptyText:       { fontSize: 14, color: C.grey, textAlign: "center" },
-  emptyBookBtn:    { backgroundColor: C.navy, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
-  emptyBookTxt:    { color: C.white, fontSize: 13, fontWeight: "700" },
-  sheetTitle:      { fontSize: 18, fontWeight: "800", color: C.navy, marginBottom: 4 },
-  sheetSub:        { fontSize: 13, color: C.grey, marginBottom: 20 },
-  fieldLabel:      { fontSize: 12, fontWeight: "700", color: C.dark, marginBottom: 8, marginTop: 4 },
+  emptyText:       { fontSize: 14, color: L.grey, textAlign: "center" },
+  emptyBookBtn:    { backgroundColor: L.navy, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
+  emptyBookTxt:    { color: L.white, fontSize: 13, fontWeight: "700" },
+  sheetTitle:      { fontSize: 18, fontWeight: "800", color: L.navy, marginBottom: 4 },
+  sheetSub:        { fontSize: 13, color: L.grey, marginBottom: 20 },
+  fieldLabel:      { fontSize: 12, fontWeight: "700", color: L.dark, marginBottom: 8, marginTop: 4 },
   serviceRow:      { marginBottom: 16 },
-  serviceChip:     { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: C.border, marginRight: 8, backgroundColor: C.white },
-  serviceChipActive:{ backgroundColor: C.navy, borderColor: C.navy },
-  serviceChipTxt:  { fontSize: 12, fontWeight: "600", color: C.dark },
-  serviceChipTxtActive:{ color: C.white },
-  input:           { borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: C.dark, backgroundColor: C.white, marginBottom: 14 },
+  serviceChip:     { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: L.border, marginRight: 8, backgroundColor: L.white },
+  serviceChipActive:{ backgroundColor: L.navy, borderColor: L.navy },
+  serviceChipTxt:  { fontSize: 12, fontWeight: "600", color: L.dark },
+  serviceChipTxtActive:{ color: L.white },
+  slotGrid:        { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+  slotTaken:       { opacity: 0.4 },
+  slotTakenTxt:    { textDecorationLine: "line-through" },
+  slotChip:        { marginRight: 0, width: "31%", alignItems: "center" },
+  closedTxt:       { fontSize: 13, color: "#B45309", marginBottom: 12 },
+  customToggle:    { fontSize: 13, fontWeight: "600", color: L.navy, marginBottom: 8 },
+  customHint:      { fontSize: 11, color: L.grey, marginTop: -6, marginBottom: 12 },
+  input:           { borderWidth: 1, borderColor: L.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: L.dark, backgroundColor: L.white, marginBottom: 14 },
   textarea:        { height: 80, textAlignVertical: "top" },
-  submitBtn:       { backgroundColor: C.yellow, borderRadius: 14, paddingVertical: 14, alignItems: "center", marginTop: 4 },
+  submitBtn:       { backgroundColor: L.yellow, borderRadius: 14, paddingVertical: 14, alignItems: "center", marginTop: 4 },
   submitDisabled:  { opacity: 0.6 },
-  submitTxt:       { fontSize: 15, fontWeight: "700", color: C.navy },
+  submitTxt:       { fontSize: 15, fontWeight: "700", color: L.navy },
 });

@@ -50,3 +50,11 @@ coverage/
 
 # Vercel
 .vercel
+
+# Firebase admin credentials
+scripts/service-account.json
+*service-account*.json
+firestore-debug.log
+
+# Client design mock-ups (large; kept locally, not in git)
+reference/

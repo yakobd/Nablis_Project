@@ -5,21 +5,26 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  collection, query, getDocs, addDoc, updateDoc, doc,
+  collection, query, where, getDocs, addDoc, updateDoc, doc,
   serverTimestamp, Timestamp,
 } from "firebase/firestore";
 import { db } from '../../lib/firebase';
-import { useAuth } from '@nablis/shared/firebase';
+import {
+  useAuth, notify, TESTIMONY_CATEGORIES, testimonyAuthor, testimonyCategoryLabel,
+} from '@nablis/shared/firebase';
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Avatar } from "../../components/Avatar";
 import { BottomSheet } from "../../components/BottomSheet";
+import { themedStyles, themedColors } from "../../theme";
+import i18n from "@nablis/i18n";
 
-const C = {
+const L = {
   navy: "#1B2E6B", yellow: "#F5C518", light: "#EEF1F8",
   grey: "#9CA3AF", dark:   "#374151", border: "#E5E7EB",
   white: "#FFFFFF", bg:    "#F9FAFB",
 };
+const C = themedColors(L);
 
 interface Testimony {
   id: string;
@@ -30,10 +35,11 @@ interface Testimony {
   category: string;
   status: "pending" | "published" | "rejected";
   likes?: number;
+  anonymous?: boolean;
   createdAt?: Timestamp;
 }
 
-const CATEGORIES = ["Faith", "Healing", "Deliverance", "Provision", "Guidance", "Other"];
+const CATEGORIES = TESTIMONY_CATEGORIES.map((c) => c.key);
 
 type AdminTab  = "pending" | "published" | "rejected";
 type MemberTab = "published";
@@ -50,7 +56,8 @@ function fmtAgo(ts?: Timestamp) {
 }
 
 // ─── Shared: Detail modal ─────────────────────────────────────────────────────
-function DetailModal({ item, onClose }: { item: Testimony | null; onClose: () => void }) {
+function DetailModal({ item, onClose, staff }: { item: Testimony | null; onClose: () => void; staff?: boolean }) {
+  const name = item ? (staff ? item.authorName : testimonyAuthor(item)) : "";
   return (
     <Modal visible={!!item} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.detailOverlay}>
@@ -63,13 +70,13 @@ function DetailModal({ item, onClose }: { item: Testimony | null; onClose: () =>
             </TouchableOpacity>
           </View>
           <View style={styles.detailMeta}>
-            <Avatar name={item?.authorName} size={28} />
+            <Avatar name={name} size={28} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.detailAuthor}>{item?.authorName}</Text>
+              <Text style={styles.detailAuthor}>{name}</Text>
               <Text style={styles.detailTime}>{fmtAgo(item?.createdAt)}</Text>
             </View>
             <View style={styles.catBadge}>
-              <Text style={styles.catText}>{item?.category}</Text>
+              <Text style={styles.catText}>{testimonyCategoryLabel(item?.category)}</Text>
             </View>
           </View>
           <ScrollView showsVerticalScrollIndicator={false}>
@@ -136,7 +143,7 @@ function AdminTestimonies() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={20} color={C.navy} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Testimonials</Text>
+        <Text style={styles.headerTitle}>{i18n.t("nav.testimonials")}</Text>
         <TouchableOpacity style={styles.refreshBtn} onPress={load}>
           <Ionicons name="refresh" size={18} color={C.navy} />
         </TouchableOpacity>
@@ -199,7 +206,7 @@ function AdminTestimonies() {
                   </View>
                 </View>
                 <View style={styles.catBadge}>
-                  <Text style={styles.catText}>{t.category}</Text>
+                  <Text style={styles.catText}>{testimonyCategoryLabel(t.category)}</Text>
                 </View>
                 <Text style={styles.cardTitle}>{t.title}</Text>
                 <Text style={styles.cardContent} numberOfLines={2}>{t.content}</Text>
@@ -235,7 +242,7 @@ function AdminTestimonies() {
         </ScrollView>
       )}
 
-      <DetailModal item={detailItem} onClose={() => setDetailItem(null)} />
+      <DetailModal item={detailItem} onClose={() => setDetailItem(null)} staff />
     </View>
   );
 }
@@ -257,7 +264,7 @@ function MemberTestimonies() {
   async function load() {
     setLoading(true);
     try {
-      const snap = await getDocs(collection(db, "testimonies"));
+      const snap = await getDocs(query(collection(db, "testimonies"), where("status", "==", "published")));
       const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Testimony));
       data.sort((a, b) => ((b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0)));
       setAll(data);
@@ -270,13 +277,13 @@ function MemberTestimonies() {
   useEffect(() => { load(); }, []);
 
   // Members only see published testimonies
-  const published = all.filter((t) => t.status === "published");
+  const published = all;
 
   async function submitTestimony() {
     if (!user || !formTitle.trim() || !formContent.trim()) return;
     setSubmitting(true);
     try {
-      await addDoc(collection(db, "testimonies"), {
+      const ref = await addDoc(collection(db, "testimonies"), {
         authorId:   user.id,
         authorName: user.displayName || user.email,
         title:      formTitle.trim(),
@@ -284,8 +291,16 @@ function MemberTestimonies() {
         category:   formCat,
         status:     "pending",
         likes:      0,
+        encouragedBy: [],
         createdAt:  serverTimestamp(),
       });
+      // Tell the Spiritual Father there is a story to review (as on the web).
+      const fathers = await getDocs(query(collection(db, "users"), where("role", "==", "super_admin")));
+      await notify(fathers.docs.filter((d) => d.id !== user.id).map((d) => ({
+        userId: d.id, type: "testimony", link: `/testimonials/${ref.id}`,
+        title: "New testimony to review",
+        description: `${user.displayName || "A member"} shared "${formTitle.trim()}".`,
+      }))).catch(() => {});
       setFormTitle(""); setFormContent(""); setShowForm(false);
       Alert.alert("Submitted", "Your testimony has been submitted for review.");
       load();
@@ -300,7 +315,7 @@ function MemberTestimonies() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={20} color={C.navy} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Testimonials</Text>
+        <Text style={styles.headerTitle}>{i18n.t("nav.testimonials")}</Text>
         <TouchableOpacity style={styles.addBtn} onPress={() => setShowForm(true)}>
           <Ionicons name="add" size={20} color={C.navy} />
         </TouchableOpacity>
@@ -332,13 +347,13 @@ function MemberTestimonies() {
           {published.map((t) => (
             <View key={t.id} style={styles.card}>
               <View style={styles.cardHeader}>
-                <Avatar name={t.authorName} size={36} />
+                <Avatar name={testimonyAuthor(t)} size={36} />
                 <View style={styles.cardInfo}>
-                  <Text style={styles.cardAuthor}>{t.authorName}</Text>
+                  <Text style={styles.cardAuthor}>{testimonyAuthor(t)}</Text>
                   <Text style={styles.cardTime}>{fmtAgo(t.createdAt)}</Text>
                 </View>
                 <View style={[styles.catBadge, { marginBottom: 0 }]}>
-                  <Text style={styles.catText}>{t.category}</Text>
+                  <Text style={styles.catText}>{testimonyCategoryLabel(t.category)}</Text>
                 </View>
               </View>
               <Text style={styles.cardTitle}>{t.title}</Text>
@@ -373,7 +388,7 @@ function MemberTestimonies() {
           {CATEGORIES.map((c) => (
             <TouchableOpacity key={c} style={[styles.chip, formCat === c && styles.chipActive]}
               onPress={() => setFormCat(c)}>
-              <Text style={[styles.chipTxt, formCat === c && styles.chipTxtActive]}>{c}</Text>
+              <Text style={[styles.chipTxt, formCat === c && styles.chipTxtActive]}>{testimonyCategoryLabel(c)}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -400,65 +415,65 @@ export default function TestimonyScreen() {
   return <MemberTestimonies />;
 }
 
-const styles = StyleSheet.create({
-  root:        { flex: 1, backgroundColor: C.bg },
+const styles = themedStyles({
+  root:        { flex: 1, backgroundColor: L.bg },
   header:      { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14 },
-  backBtn:     { width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: "800", color: C.navy, textAlign: "center" },
-  addBtn:      { width: 36, height: 36, borderRadius: 10, backgroundColor: C.yellow, alignItems: "center", justifyContent: "center" },
-  refreshBtn:  { width: 36, height: 36, borderRadius: 10, backgroundColor: C.light, alignItems: "center", justifyContent: "center" },
+  backBtn:     { width: 36, height: 36, borderRadius: 10, backgroundColor: L.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: L.border },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: "800", color: L.navy, textAlign: "center" },
+  addBtn:      { width: 36, height: 36, borderRadius: 10, backgroundColor: L.yellow, alignItems: "center", justifyContent: "center" },
+  refreshBtn:  { width: 36, height: 36, borderRadius: 10, backgroundColor: L.light, alignItems: "center", justifyContent: "center" },
   statsRow:    { flexDirection: "row", gap: 10, paddingHorizontal: 16, marginBottom: 16 },
-  statCard:    { flex: 1, backgroundColor: C.white, borderRadius: 14, padding: 14, alignItems: "center", borderWidth: 1, borderColor: C.border },
+  statCard:    { flex: 1, backgroundColor: L.white, borderRadius: 14, padding: 14, alignItems: "center", borderWidth: 1, borderColor: L.border },
   statNum:     { fontSize: 22, fontWeight: "800", marginBottom: 2 },
-  statLabel:   { fontSize: 10, color: C.grey, fontWeight: "600" },
-  tabs:        { flexDirection: "row", marginHorizontal: 16, backgroundColor: C.white, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 4, marginBottom: 16 },
+  statLabel:   { fontSize: 10, color: L.grey, fontWeight: "600" },
+  tabs:        { flexDirection: "row", marginHorizontal: 16, backgroundColor: L.white, borderRadius: 12, borderWidth: 1, borderColor: L.border, padding: 4, marginBottom: 16 },
   tabBtn:      { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 9 },
-  tabActive:   { backgroundColor: C.navy },
-  tabTxt:      { fontSize: 11, fontWeight: "600", color: C.grey },
-  tabTxtActive:{ color: C.white },
+  tabActive:   { backgroundColor: L.navy },
+  tabTxt:      { fontSize: 11, fontWeight: "600", color: L.grey },
+  tabTxtActive:{ color: L.white },
   list:        { paddingHorizontal: 16 },
   center:      { alignItems: "center", justifyContent: "center", paddingVertical: 40 },
-  emptyText:   { fontSize: 14, color: C.grey },
-  card:        { backgroundColor: C.white, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: C.border },
+  emptyText:   { fontSize: 14, color: L.grey },
+  card:        { backgroundColor: L.white, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: L.border },
   cardHeader:  { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   cardInfo:    { flex: 1 },
-  cardAuthor:  { fontSize: 13, fontWeight: "700", color: C.dark },
-  cardTime:    { fontSize: 11, color: C.grey },
+  cardAuthor:  { fontSize: 13, fontWeight: "700", color: L.dark },
+  cardTime:    { fontSize: 11, color: L.grey },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
   statusText:  { fontSize: 10, fontWeight: "700" },
-  catBadge:    { backgroundColor: C.light, alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, marginBottom: 6 },
-  catText:     { fontSize: 10, fontWeight: "700", color: C.navy },
-  cardTitle:   { fontSize: 14, fontWeight: "700", color: C.navy, marginBottom: 6 },
-  cardContent: { fontSize: 13, color: C.dark, lineHeight: 20, marginBottom: 12 },
+  catBadge:    { backgroundColor: L.light, alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, marginBottom: 6 },
+  catText:     { fontSize: 10, fontWeight: "700", color: L.navy },
+  cardTitle:   { fontSize: 14, fontWeight: "700", color: L.navy, marginBottom: 6 },
+  cardContent: { fontSize: 13, color: L.dark, lineHeight: 20, marginBottom: 12 },
   cardFooter:  { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   likesRow:    { flexDirection: "row", alignItems: "center", gap: 4 },
-  likesText:   { fontSize: 12, color: C.grey },
-  viewBtn:     { backgroundColor: C.light, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  viewBtnTxt:  { fontSize: 10, fontWeight: "800", color: C.navy, letterSpacing: 0.5 },
+  likesText:   { fontSize: 12, color: L.grey },
+  viewBtn:     { backgroundColor: L.light, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  viewBtnTxt:  { fontSize: 10, fontWeight: "800", color: L.navy, letterSpacing: 0.5 },
   adminActions:{ flexDirection: "row", gap: 8 },
   approveBtn:  { backgroundColor: "#16A34A", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, minWidth: 70, alignItems: "center" },
-  approveBtnTxt:{ color: C.white, fontSize: 12, fontWeight: "700" },
+  approveBtnTxt:{ color: L.white, fontSize: 12, fontWeight: "700" },
   rejectBtn:   { backgroundColor: "#FEF2F2", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: "#FECACA" },
   rejectBtnTxt:{ color: "#DC2626", fontSize: 12, fontWeight: "700" },
-  sheetTitle:  { fontSize: 18, fontWeight: "800", color: C.navy, marginBottom: 4 },
-  sheetSub:    { fontSize: 13, color: C.grey, marginBottom: 20 },
-  fieldLabel:  { fontSize: 12, fontWeight: "700", color: C.dark, marginBottom: 8 },
-  input:       { borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: C.dark, backgroundColor: C.white, marginBottom: 14 },
+  sheetTitle:  { fontSize: 18, fontWeight: "800", color: L.navy, marginBottom: 4 },
+  sheetSub:    { fontSize: 13, color: L.grey, marginBottom: 20 },
+  fieldLabel:  { fontSize: 12, fontWeight: "700", color: L.dark, marginBottom: 8 },
+  input:       { borderWidth: 1, borderColor: L.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: L.dark, backgroundColor: L.white, marginBottom: 14 },
   textarea:    { height: 100, textAlignVertical: "top" },
-  chip:        { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: C.border, marginRight: 8, backgroundColor: C.white },
-  chipActive:  { backgroundColor: C.navy, borderColor: C.navy },
-  chipTxt:     { fontSize: 12, fontWeight: "600", color: C.dark },
-  chipTxtActive:{ color: C.white },
-  submitBtn:   { backgroundColor: C.yellow, borderRadius: 14, paddingVertical: 14, alignItems: "center" },
-  submitTxt:   { fontSize: 15, fontWeight: "700", color: C.navy },
+  chip:        { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: L.border, marginRight: 8, backgroundColor: L.white },
+  chipActive:  { backgroundColor: L.navy, borderColor: L.navy },
+  chipTxt:     { fontSize: 12, fontWeight: "600", color: L.dark },
+  chipTxtActive:{ color: L.white },
+  submitBtn:   { backgroundColor: L.yellow, borderRadius: 14, paddingVertical: 14, alignItems: "center" },
+  submitTxt:   { fontSize: 15, fontWeight: "700", color: L.navy },
   detailOverlay:{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  detailSheet: { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: "80%" },
-  detailHandle:{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: "center", marginBottom: 16 },
+  detailSheet: { backgroundColor: L.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: "80%" },
+  detailHandle:{ width: 40, height: 4, borderRadius: 2, backgroundColor: L.border, alignSelf: "center", marginBottom: 16 },
   detailHeader:{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 14 },
-  detailTitle: { flex: 1, fontSize: 16, fontWeight: "800", color: C.navy },
-  detailClose: { width: 32, height: 32, borderRadius: 16, backgroundColor: C.light, alignItems: "center", justifyContent: "center" },
+  detailTitle: { flex: 1, fontSize: 16, fontWeight: "800", color: L.navy },
+  detailClose: { width: 32, height: 32, borderRadius: 16, backgroundColor: L.light, alignItems: "center", justifyContent: "center" },
   detailMeta:  { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
-  detailAuthor:{ fontSize: 13, fontWeight: "700", color: C.dark },
-  detailTime:  { fontSize: 11, color: C.grey },
-  detailContent:{ fontSize: 14, color: C.dark, lineHeight: 24, paddingBottom: 24 },
+  detailAuthor:{ fontSize: 13, fontWeight: "700", color: L.dark },
+  detailTime:  { fontSize: 11, color: L.grey },
+  detailContent:{ fontSize: 14, color: L.dark, lineHeight: 24, paddingBottom: 24 },
 });

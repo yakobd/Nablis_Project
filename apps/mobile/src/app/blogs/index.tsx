@@ -10,12 +10,15 @@ import { auth, db } from '../../lib/firebase';
 import {
   collection, query, where, getDocs, addDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
+import { themedStyles, themedColors } from "../../theme";
+import i18n from "@nablis/i18n";
 
-const C = {
+const L = {
   navy: '#1B2E6B', yellow: '#F5C518', light: '#EEF1F8',
   grey: '#9CA3AF', dark: '#374151', border: '#E5E7EB',
   white: '#FFFFFF', bg: '#F9FAFB',
 };
+const C = themedColors(L);
 
 interface Comment {
   id: string;
@@ -54,8 +57,12 @@ export default function BlogsScreen() {
       try {
         const q    = query(collection(db, 'blogPosts'), where('status', '==', 'published'));
         const snap = await getDocs(q);
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        // Posts scheduled for later stay hidden until their publish time (as on the web).
+        const when = (b: any) => (b.publishAt ?? b.createdAt)?.seconds || 0;
+        const now = Date.now() / 1000;
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as any))
+          .filter((b) => when(b) <= now)
+          .sort((a, b) => when(b) - when(a));
         setBlogs(data);
       } catch (e) {
         console.error('[Blogs] fetch error:', e);
@@ -72,7 +79,10 @@ export default function BlogsScreen() {
     setLoadingComments(true);
     try {
       const snap = await getDocs(collection(db, 'blogPosts', blog.id, 'comments'));
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Comment));
+      // Comments hidden by staff on the web are not shown to members.
+      const data = snap.docs
+        .filter(d => !d.data().hidden)
+        .map(d => ({ id: d.id, ...d.data() } as Comment));
       data.sort((a, b) => ((b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0)));
       // Merge with inline comments array (legacy)
       const inlineComments: Comment[] = (blog.comments ?? []).filter(
@@ -120,7 +130,7 @@ export default function BlogsScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <Text style={styles.backText}>← Back</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Blogs</Text>
+          <Text style={styles.title}>{i18n.t("nav.blogs")}</Text>
         </View>
 
         {loading ? (
@@ -196,7 +206,10 @@ export default function BlogsScreen() {
                 Comments {comments.length > 0 ? `(${comments.length})` : ''}
               </Text>
 
-              {/* Post comment input */}
+              {/* Post comment input (hidden when staff turned comments off for this post) */}
+              {selectedBlog?.enableComments === false ? (
+                <Text style={styles.commentsOff}>Comments are turned off for this post.</Text>
+              ) : (
               <View style={styles.commentInput}>
                 <TextInput
                   style={styles.commentTextInput}
@@ -217,6 +230,7 @@ export default function BlogsScreen() {
                     : <Text style={styles.commentPostTxt}>Post</Text>}
                 </TouchableOpacity>
               </View>
+              )}
 
               {/* Comments list */}
               {loadingComments ? (
@@ -251,44 +265,45 @@ export default function BlogsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   header:            { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
   backBtn:           { marginRight: 16 },
-  backText:          { color: C.navy, fontSize: 16 },
-  title:             { fontSize: 24, fontWeight: 'bold', color: C.navy },
+  backText:          { color: L.navy, fontSize: 16 },
+  title:             { fontSize: 24, fontWeight: 'bold', color: L.navy },
   empty:             { alignItems: 'center', marginTop: 60 },
-  emptyText:         { color: C.grey, fontSize: 16 },
-  card:              { marginHorizontal: 16, marginBottom: 12, backgroundColor: C.white, borderRadius: 12, padding: 16 },
-  categoryBadge:     { backgroundColor: C.light, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start', marginBottom: 8 },
-  categoryText:      { fontSize: 11, color: C.navy, fontWeight: '600' },
-  cardTitle:         { fontSize: 18, fontWeight: 'bold', color: C.navy, marginBottom: 8 },
-  cardExcerpt:       { fontSize: 14, color: C.grey, lineHeight: 20, marginBottom: 12 },
+  emptyText:         { color: L.grey, fontSize: 16 },
+  card:              { marginHorizontal: 16, marginBottom: 12, backgroundColor: L.white, borderRadius: 12, padding: 16 },
+  categoryBadge:     { backgroundColor: L.light, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start', marginBottom: 8 },
+  categoryText:      { fontSize: 11, color: L.navy, fontWeight: '600' },
+  cardTitle:         { fontSize: 18, fontWeight: 'bold', color: L.navy, marginBottom: 8 },
+  cardExcerpt:       { fontSize: 14, color: L.grey, lineHeight: 20, marginBottom: 12 },
   cardFooter:        { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  authorText:        { fontSize: 12, color: C.grey },
-  dateText:          { fontSize: 12, color: C.grey },
-  readMore:          { fontSize: 13, fontWeight: '700', color: C.navy },
+  authorText:        { fontSize: 12, color: L.grey },
+  dateText:          { fontSize: 12, color: L.grey },
+  readMore:          { fontSize: 13, fontWeight: '700', color: L.navy },
 
   // Detail modal
-  modalHeader:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 12, backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: C.border },
+  modalHeader:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 12, backgroundColor: L.white, borderBottomWidth: 1, borderBottomColor: L.border },
   modalBack:         {},
   detailScroll:      { paddingHorizontal: 20, paddingTop: 20 },
-  detailTitle:       { fontSize: 22, fontWeight: '800', color: C.navy, marginBottom: 12, lineHeight: 30 },
+  detailTitle:       { fontSize: 22, fontWeight: '800', color: L.navy, marginBottom: 12, lineHeight: 30 },
   detailMeta:        { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-  detailContent:     { fontSize: 15, color: C.dark, lineHeight: 26, marginBottom: 28 },
+  detailContent:     { fontSize: 15, color: L.dark, lineHeight: 26, marginBottom: 28 },
 
   // Comments
-  commentSection:    { borderTopWidth: 1, borderTopColor: C.border, paddingTop: 20 },
-  commentSectionTitle: { fontSize: 16, fontWeight: '800', color: C.navy, marginBottom: 14 },
+  commentSection:    { borderTopWidth: 1, borderTopColor: L.border, paddingTop: 20 },
+  commentSectionTitle: { fontSize: 16, fontWeight: '800', color: L.navy, marginBottom: 14 },
+  commentsOff:     { fontSize: 13, color: L.grey, fontStyle: "italic", marginBottom: 12 },
   commentInput:      { flexDirection: 'row', gap: 10, marginBottom: 20, alignItems: 'flex-end' },
-  commentTextInput:  { flex: 1, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, color: C.dark, backgroundColor: C.white, maxHeight: 100 },
-  commentPostBtn:    { backgroundColor: C.yellow, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  commentPostTxt:    { fontSize: 13, fontWeight: '700', color: C.navy },
-  noComments:        { textAlign: 'center', color: C.grey, fontSize: 14, marginVertical: 20 },
-  commentCard:       { backgroundColor: C.white, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: C.border },
+  commentTextInput:  { flex: 1, borderWidth: 1, borderColor: L.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, color: L.dark, backgroundColor: L.white, maxHeight: 100 },
+  commentPostBtn:    { backgroundColor: L.yellow, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
+  commentPostTxt:    { fontSize: 13, fontWeight: '700', color: L.navy },
+  noComments:        { textAlign: 'center', color: L.grey, fontSize: 14, marginVertical: 20 },
+  commentCard:       { backgroundColor: L.white, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: L.border },
   commentHeader:     { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  commentAvatar:     { width: 32, height: 32, borderRadius: 16, backgroundColor: C.navy, alignItems: 'center', justifyContent: 'center' },
-  commentAvatarTxt:  { color: C.yellow, fontSize: 13, fontWeight: '800' },
-  commentAuthor:     { fontSize: 13, fontWeight: '700', color: C.dark },
-  commentTime:       { fontSize: 11, color: C.grey },
-  commentContent:    { fontSize: 14, color: C.dark, lineHeight: 20 },
+  commentAvatar:     { width: 32, height: 32, borderRadius: 16, backgroundColor: L.navy, alignItems: 'center', justifyContent: 'center' },
+  commentAvatarTxt:  { color: L.yellow, fontSize: 13, fontWeight: '800' },
+  commentAuthor:     { fontSize: 13, fontWeight: '700', color: L.dark },
+  commentTime:       { fontSize: 11, color: L.grey },
+  commentContent:    { fontSize: 14, color: L.dark, lineHeight: 20 },
 });

@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # The Firestore emulator needs Java.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install
+        run: npm ci --legacy-peer-deps
+
+      - name: Type-check web
+        run: npx tsc --noEmit
+        working-directory: apps/web
+
+      - name: Type-check mobile
+        run: npx tsc --noEmit
+        working-directory: apps/mobile
+
+      - name: Firestore rules tests
+        run: npm run test:rules -w scripts

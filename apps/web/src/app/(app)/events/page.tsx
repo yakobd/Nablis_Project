@@ -1,241 +1,165 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  collection, query, orderBy, where, getDocs, addDoc, updateDoc, deleteDoc,
-  doc, serverTimestamp, Timestamp, writeBatch, arrayUnion,
+  arrayRemove, arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, updateDoc,
 } from "firebase/firestore";
-import { db, useAuth } from "@/lib/firebase";
-import { uploadToCloudinary } from "@/lib/cloudinary";
 import {
-  Plus, X, Calendar, MapPin, Users, Clock, ChevronRight,
-  Pencil, Trash2, Send, Search,
+  Sparkles, Users, BookOpen, Bus, Church, Star, CalendarDays, MapPin, Clock, Pencil, Bookmark,
+  BookmarkCheck, QrCode, X, Download, Bell, Check, Paperclip, ChevronRight, Plus,
 } from "lucide-react";
-import type { Event } from "@nablis/shared/firebase";
+import {
+  db, useAuth, notify, setRsvp, clearRsvp, eventRange, eventToIcs, eventPaymentMode,
+  EVENT_CATEGORIES, type EventDoc, type RsvpDoc,
+} from "@/lib/firebase";
+import { useToast } from "@/components/ui/Toast";
+import { EventFormModal } from "./_components/EventFormModal";
+import { PageTitle } from "@/components/PageTitle";
+import i18n from "@nablis/i18n";
+import { dateLocale } from "@/lib/locale";
+import { useTranslation } from "@nablis/i18n";
 
-const CATEGORIES = ["All", "Spiritual Retreats", "Community Prayers", "Bible Study", "Pilgrimage", "Festivals"] as const;
-type Cat = (typeof CATEGORIES)[number];
-
-const INPUT = "w-full px-4 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors";
-const SELECT = INPUT + " bg-white";
-
-function fmtDate(ts: Timestamp | null | undefined) {
-  if (!ts) return "";
-  try { return ts.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
-  catch { return ""; }
-}
-function toDatetimeLocal(ts: Timestamp | undefined | null): string {
-  if (!ts) return "";
-  try {
-    const d = ts.toDate();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  } catch { return ""; }
-}
-
-type BadgeType = "FREE" | "VOLUNTEER" | "REGISTER";
-function badge(ev: Event): BadgeType {
-  if ((ev as any).free) return "FREE";
-  if ((ev as any).volunteer) return "VOLUNTEER";
-  return "REGISTER";
-}
-const BADGE_STYLE: Record<BadgeType, string> = {
-  FREE:      "bg-green-50 text-green-700",
-  VOLUNTEER: "bg-purple-50 text-purple-700",
-  REGISTER:  "bg-[#F5C518]/20 text-[#1B2E6B]",
+const CATEGORY_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  "Spiritual Retreats": Sparkles,
+  "Community Prayers": Users,
+  "Bible Study": BookOpen,
+  "Pilgrimage": Bus,
+  "Festivals": Church,
 };
 
-// ── Event Form Modal ──────────────────────────────────────────────────────────
-interface EventFormProps {
-  initial?: Event | null;
+function fmtDay(d: Date, withYear = true) {
+  return d.toLocaleDateString(dateLocale(), { month: "short", day: "numeric", ...(withYear ? { year: "numeric" } : {}) });
+}
+function rangeLabel(e: EventDoc) {
+  const r = eventRange(e);
+  if (!r) return i18n.t("events.dateTba");
+  const sameDay = r.start.toDateString() === r.end.toDateString();
+  return sameDay ? fmtDay(r.start) : `${fmtDay(r.start, false)} - ${fmtDay(r.end)}`;
+}
+function timeLabel(e: EventDoc) {
+  const r = eventRange(e);
+  if (!r) return "";
+  return e.time ? r.start.toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" }) : i18n.t("events.fullDay");
+}
+function partOfDay(e: EventDoc) {
+  if ((e.durationDays ?? 1) > 1) return i18n.t("events.days", { count: e.durationDays });
+  if (!e.time) return i18n.t("events.fullDay");
+  const h = Number(e.time.split(":")[0]);
+  return i18n.t(h < 12 ? "events.morning" : h < 17 ? "events.afternoon" : "events.evening");
+}
+function priceBadge(e: EventDoc) {
+  const mode = eventPaymentMode(e);
+  if (mode === "free") return { label: i18n.t("events.free"), cls: "bg-white text-[#111827]" };
+  if (mode === "volunteer") return { label: i18n.t("events.volunteer"), cls: "bg-[#F5C518] text-[#111827]" };
+  if (mode === "donation") return { label: e.price ? `${i18n.t("events.donation")} ${e.price}` : i18n.t("events.donation"), cls: "bg-white text-[#111827]" };
+  return { label: `${e.price ?? ""} AED`.trim(), cls: "bg-white text-[#111827]" };
+}
+function downloadIcs(e: EventDoc) {
+  const url = URL.createObjectURL(new Blob([eventToIcs(e)], { type: "text/calendar" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = `${e.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.ics`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Event details ─────────────────────────────────────────────────────────────
+function EventDetails({
+  ev, isStaff, myRsvp, saved, onClose, onRsvp, onSave, onEdit, onRemind,
+}: {
+  ev: EventDoc;
+  isStaff: boolean;
+  myRsvp: RsvpDoc["status"] | null;
+  saved: boolean;
   onClose: () => void;
-  onSaved: () => void;
-}
-function EventFormModal({ initial, onClose, onSaved }: EventFormProps) {
-  const [title, setTitle]         = useState(initial?.title ?? "");
-  const [description, setDesc]    = useState(initial?.description ?? "");
-  const [location, setLocation]   = useState((initial as any)?.location ?? "");
-  const [category, setCategory]   = useState((initial as any)?.category ?? "Community Prayers");
-  const [capacity, setCapacity]   = useState(String((initial as any)?.totalCapacity ?? ""));
-  const [startDate, setStartDate] = useState(toDatetimeLocal((initial as any)?.startDate));
-  const [endDate, setEndDate]     = useState(toDatetimeLocal((initial as any)?.endDate));
-  const [isFree, setIsFree]       = useState((initial as any)?.free ?? false);
-  const [isVol, setIsVol]         = useState((initial as any)?.volunteer ?? false);
-  const [imageFile, setImageFile]       = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string>((initial as any)?.imageURL ?? "");
-  const [uploadingImg, setUploadingImg] = useState(false);
-  const [saving, setSaving]       = useState(false);
-  const [deleting, setDeleting]   = useState(false);
-  const [confirmDel, setConfirmDel] = useState(false);
+  onRsvp: (s: RsvpDoc["status"] | null) => void;
+  onSave: () => void;
+  onEdit: () => void;
+  onRemind: () => void;
+}) {
+  const { t } = useTranslation();
+  const [attendees, setAttendees] = useState<RsvpDoc[] | null>(null);
+  useEffect(() => {
+    if (!isStaff) return;
+    getDocs(collection(db, "events", ev.id, "rsvps")).then((s) => setAttendees(s.docs.map((d) => d.data() as RsvpDoc)));
+  }, [ev.id, isStaff]);
+  const going = (attendees ?? []).filter((a) => a.status === "attending");
+  const legacy = (ev.rsvps ?? []).filter((r) => !going.some((g) => g.userId === r.userId));
+  const badge = priceBadge(ev);
 
-  async function handleSave() {
-    if (!title.trim()) return;
-    setSaving(true);
-    try {
-      let imageURL = (initial as any)?.imageURL ?? "";
-      if (imageFile) {
-        setUploadingImg(true);
-        try { imageURL = await uploadToCloudinary(imageFile, "nablis/events"); }
-        finally { setUploadingImg(false); }
-      }
-      const payload = {
-        title:         title.trim(),
-        description:   description.trim(),
-        location:      location.trim(),
-        category,
-        totalCapacity: capacity ? Number(capacity) : null,
-        startDate:     startDate ? Timestamp.fromDate(new Date(startDate)) : null,
-        endDate:       endDate   ? Timestamp.fromDate(new Date(endDate))   : null,
-        free:          isFree,
-        volunteer:     isVol,
-        imageURL,
-        updatedAt:     serverTimestamp(),
-      };
-      if (initial?.id) {
-        await updateDoc(doc(db, "events", initial.id), payload);
-      } else {
-        const evRef = await addDoc(collection(db, "events"), { ...payload, createdAt: serverTimestamp(), attendees: [] });
-        // Notify all active members
-        const membersSnap = await getDocs(query(collection(db, "users"), where("status", "==", "active"), where("role", "==", "member")));
-        if (!membersSnap.empty) {
-          const batch = writeBatch(db);
-          membersSnap.docs.forEach((m) => {
-            batch.set(doc(collection(db, "notifications")), {
-              userId: m.id,
-              type: "new_event",
-              title: `New Event: ${title.trim()}`,
-              description: description.trim() || "A new event has been added.",
-              link: `/events`,
-              read: false,
-              createdAt: serverTimestamp(),
-            });
-          });
-          await batch.commit();
-        }
-      }
-      onSaved();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDelete() {
-    if (!confirmDel) { setConfirmDel(true); return; }
-    if (!initial?.id) return;
-    setDeleting(true);
-    try {
-      await deleteDoc(doc(db, "events", initial.id));
-      onSaved();
-    } finally {
-      setDeleting(false);
-    }
+  function exportAttendees() {
+    const rows = [["Name", "RSVP"], ...going.map((a) => [a.userName, "Attending"]), ...legacy.map((r) => [r.userName ?? r.userId, "Attending"])];
+    const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a"); a.href = url; a.download = `${ev.title}-attendees.csv`; a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-y-auto max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#F3F4F6]">
-          <h2 className="text-[#1B2E6B] font-bold text-base">{initial ? "Update Event" : "Create Event"}</h2>
-          <button onClick={onClose} className="text-[#9CA3AF] hover:text-[#6B7280]"><X size={18} /></button>
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-start sm:items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-[640px] shadow-2xl overflow-hidden my-8" onClick={(e) => e.stopPropagation()}>
+        <div className="relative h-56 bg-[#1B2E6B]">
+          {ev.imageURL && <img src={ev.imageURL} alt="" className="absolute inset-0 w-full h-full object-cover" />}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+          <button onClick={onClose} className="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60" aria-label={t("common.close")}><X size={18} /></button>
+          <div className="absolute bottom-5 left-6 right-6 text-white">
+            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${badge.cls}`}>{badge.label}</span>
+            <p className="font-display text-3xl font-bold mt-2 leading-tight">{ev.title}</p>
+          </div>
         </div>
-        <div className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Title *</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Event title…" className={INPUT} />
+        <div className="p-6 space-y-5">
+          <div className="grid sm:grid-cols-3 gap-3 text-sm">
+            <p className="flex items-center gap-2 text-[#374151]"><CalendarDays size={16} className="text-[#1B2E6B]" />{rangeLabel(ev)}</p>
+            <p className="flex items-center gap-2 text-[#374151]"><Clock size={16} className="text-[#1B2E6B]" />{timeLabel(ev)}</p>
+            <p className="flex items-center gap-2 text-[#374151]"><MapPin size={16} className="text-[#1B2E6B]" />{[ev.location, ev.meetingRoom].filter(Boolean).join(" — ") || t("events.tba")}</p>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Description</label>
-            <textarea value={description} onChange={(e) => setDesc(e.target.value)} rows={3}
-              placeholder="Describe the event…"
-              className={INPUT + " resize-none"} />
+          {ev.description && <p className="text-[#4B5563] leading-relaxed whitespace-pre-wrap">{ev.description}</p>}
+          {!!ev.attachments?.length && (
+            <div className="flex flex-wrap gap-2">
+              {ev.attachments.map((a) => (
+                <a key={a.url} href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#EEF1F8] text-xs font-semibold text-[#1B2E6B] hover:bg-[#dde3f0]">
+                  <Paperclip size={12} /> {a.name}
+                </a>
+              ))}
+            </div>
+          )}
+
+          {/* RSVP Yes / No */}
+          <div className="bg-[#F8FAFC] rounded-xl p-4">
+            <p className="text-sm font-semibold text-[#111827] mb-3">{t("events.willAttend")}</p>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => onRsvp(myRsvp === "attending" ? null : "attending")}
+                className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold ${myRsvp === "attending" ? "bg-[#16A34A] text-white" : "bg-white border border-[#E5E7EB] text-[#111827] hover:border-[#16A34A]"}`}>
+                <Check size={15} /> {t("events.yes")}
+              </button>
+              <button onClick={() => onRsvp(myRsvp === "not_attending" ? null : "not_attending")}
+                className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold ${myRsvp === "not_attending" ? "bg-[#6B7280] text-white" : "bg-white border border-[#E5E7EB] text-[#111827] hover:border-[#6B7280]"}`}>
+                <X size={15} /> {t("common.no")}
+              </button>
+              <button onClick={() => downloadIcs(ev)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-[#1B2E6B] hover:bg-[#EEF1F8]">
+                <CalendarDays size={15} /> {t("events.addToCalendar")}
+              </button>
+              <button onClick={onSave} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-[#1B2E6B] hover:bg-[#EEF1F8]">
+                {saved ? <BookmarkCheck size={15} /> : <Bookmark size={15} />} {saved ? t("events.saved") : t("events.save")}
+              </button>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Event Image</label>
-            {imagePreview && (
-              <div className="mb-2 relative">
-                <img src={imagePreview} alt="" className="w-full h-28 object-cover rounded-xl" />
-                <button type="button" onClick={() => { setImagePreview(""); setImageFile(null); }}
-                  className="absolute top-1 right-1 p-1 rounded-full bg-black/50 text-white hover:bg-black/70">
-                  <X size={12} />
-                </button>
+
+          {isStaff && (
+            <div className="border-t border-[#F3F4F6] pt-5">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-[#111827]">{t("events.attending", { n: attendees === null ? "…" : going.length + legacy.length })}</p>
+                <div className="flex gap-2">
+                  <button onClick={onRemind} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#EEF1F8] text-xs font-semibold text-[#1B2E6B] hover:bg-[#dde3f0]"><Bell size={12} /> {t("events.sendReminder")}</button>
+                  <button onClick={exportAttendees} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#EEF1F8] text-xs font-semibold text-[#1B2E6B] hover:bg-[#dde3f0]"><Download size={12} /> {t("events.export")}</button>
+                  <button onClick={onEdit} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#1B2E6B] text-xs font-semibold text-white hover:bg-[#162554]"><Pencil size={12} /> {t("common.edit")}</button>
+                </div>
               </div>
-            )}
-            <input type="file" accept="image/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                setImageFile(file);
-                setImagePreview(URL.createObjectURL(file));
-              }}
-              className="w-full text-sm text-[#6B7280] file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#EEF1F8] file:text-[#1B2E6B] hover:file:bg-[#dde3f0] cursor-pointer" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#374151] mb-1.5">Category</label>
-              <select value={category} onChange={(e) => setCategory(e.target.value)} className={SELECT}>
-                {CATEGORIES.filter((c) => c !== "All").map((c) => (
-                  <option key={c} value={c}>{c}</option>
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                {[...going.map((a) => a.userName), ...legacy.map((r) => r.userName ?? t("status.member"))].map((n, i) => (
+                  <span key={i} className="px-2.5 py-1 rounded-full bg-[#DCFCE7] text-[#15803D] text-xs">{n}</span>
                 ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-[#374151] mb-1.5">Capacity</label>
-              <input type="number" value={capacity} onChange={(e) => setCapacity(e.target.value)}
-                placeholder="Max attendees" className={INPUT} />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Location</label>
-            <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Venue or online link…" className={INPUT} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#374151] mb-1.5">Start Date</label>
-              <input type="datetime-local" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={INPUT} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-[#374151] mb-1.5">End Date</label>
-              <input type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)} className={INPUT} />
-            </div>
-          </div>
-          <div className="flex gap-4">
-            {[
-              { label: "Free Event",   value: isFree, set: setIsFree },
-              { label: "Volunteer",    value: isVol,  set: setIsVol  },
-            ].map(({ label, value, set }) => (
-              <label key={label} className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={value} onChange={(e) => set(e.target.checked)}
-                  className="w-4 h-4 accent-[#1B2E6B]" />
-                <span className="text-sm text-[#374151]">{label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-        <div className="px-6 pb-6 space-y-2">
-          <button onClick={handleSave} disabled={saving || uploadingImg || !title.trim()}
-            className="w-full flex items-center justify-center gap-2 bg-[#F5C518] text-[#1B2E6B] font-semibold py-2.5 rounded-xl hover:bg-[#e6b800] disabled:opacity-60 transition-colors text-sm">
-            {(saving || uploadingImg) ? <div className="w-4 h-4 border-2 border-[#1B2E6B]/40 border-t-[#1B2E6B] rounded-full animate-spin" /> : <Send size={14} />}
-            {uploadingImg ? "Uploading Image…" : initial ? "Save Changes" : "Create Event"}
-          </button>
-          {initial && (
-            confirmDel ? (
-              <div className="flex gap-2">
-                <button onClick={() => setConfirmDel(false)}
-                  className="flex-1 py-2 rounded-xl border border-[#E5E7EB] text-sm text-[#6B7280] font-medium hover:bg-[#F9FAFB]">
-                  Cancel
-                </button>
-                <button onClick={handleDelete} disabled={deleting}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 disabled:opacity-60">
-                  {deleting ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Trash2 size={13} />}
-                  Confirm Delete
-                </button>
+                {attendees !== null && going.length + legacy.length === 0 && <span className="text-xs text-[#9CA3AF]">{t("events.noRsvps")}</span>}
               </div>
-            ) : (
-              <button onClick={handleDelete}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-red-200 text-red-500 font-semibold text-sm hover:bg-red-50 transition-colors">
-                <Trash2 size={13} /> Delete Event
-              </button>
-            )
+              {!!ev.guestEmails?.length && <p className="text-xs text-[#6B7280] mt-3">{t("events.guests")}: {ev.guestEmails.join(", ")}</p>}
+            </div>
           )}
         </div>
       </div>
@@ -243,104 +167,44 @@ function EventFormModal({ initial, onClose, onSaved }: EventFormProps) {
   );
 }
 
-// ── Event card ────────────────────────────────────────────────────────────────
-function EventCard({ ev, onEdit, isAdminOrSuperAdmin, onRsvp, userId }: { ev: Event; onEdit?: () => void; isAdminOrSuperAdmin: boolean; onRsvp?: (ev: Event) => void; userId?: string }) {
-  const b = badge(ev);
-  return (
-    <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm overflow-hidden group hover:shadow-md transition-shadow">
-      <div className="aspect-[16/9] bg-gradient-to-br from-[#1B2E6B] to-[#2a4499] overflow-hidden relative">
-        {(ev as any).imageURL ? (
-          <img src={(ev as any).imageURL} alt={ev.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-70" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Calendar size={36} className="text-white/20" />
-          </div>
-        )}
-        <span className={`absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold ${BADGE_STYLE[b]}`}>{b}</span>
-        {isAdminOrSuperAdmin && onEdit && (
-          <button onClick={onEdit}
-            className="absolute top-3 right-3 p-1.5 rounded-lg bg-black/40 text-white hover:bg-black/60 transition-colors">
-            <Pencil size={12} />
-          </button>
-        )}
-      </div>
-      <div className="p-4">
-        <p className="text-[10px] font-bold text-[#1B2E6B] bg-[#EEF1F8] inline-block px-2 py-0.5 rounded-full mb-2">
-          {(ev as any).category ?? "Event"}
-        </p>
-        <h3 className="text-[#1B2E6B] font-bold text-sm mb-2 line-clamp-2">{ev.title}</h3>
-        <div className="space-y-1">
-          {(ev as any).startDate && (
-            <div className="flex items-center gap-1.5 text-[#9CA3AF] text-[10px]">
-              <Clock size={10} /> {fmtDate((ev as any).startDate)}
-            </div>
-          )}
-          {(ev as any).location && (
-            <div className="flex items-center gap-1.5 text-[#9CA3AF] text-[10px]">
-              <MapPin size={10} /> {(ev as any).location}
-            </div>
-          )}
-          {(ev as any).totalCapacity && (
-            <div className="flex items-center gap-1.5 text-[#9CA3AF] text-[10px]">
-              <Users size={10} /> {((ev as any).attendees?.length ?? 0)} / {(ev as any).totalCapacity} attending
-            </div>
-          )}
-        </div>
-        {!isAdminOrSuperAdmin && (() => {
-          const isRegistered = ((ev as any).rsvps ?? []).some((r: any) => r.userId === userId);
-          return (
-            <button
-              onClick={(e) => { e.stopPropagation(); if (!isRegistered && onRsvp) onRsvp(ev); }}
-              disabled={isRegistered}
-              className={`mt-3 w-full py-2 rounded-xl text-xs font-bold transition-colors ${isRegistered ? 'bg-green-50 text-green-700 cursor-default' : 'bg-[#F5C518] text-[#1B2E6B] hover:bg-[#e6b800]'}`}>
-              {isRegistered ? '✓ Registered' : 'Register Now'}
-            </button>
-          );
-        })()}
-      </div>
-    </div>
-  );
-}
+// ── Manage events table ───────────────────────────────────────────────────────
+function ManageEvents({ events, onClose, onEdit }: { events: EventDoc[]; onClose: () => void; onEdit: (e: EventDoc) => void }) {
+  const { t } = useTranslation();
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    Promise.all(events.map(async (e) => {
+      const s = await getDocs(collection(db, "events", e.id, "rsvps"));
+      const going = s.docs.filter((d) => d.data().status === "attending").length;
+      return [e.id, going + (e.rsvps?.length ?? 0)] as const;
+    })).then((pairs) => setCounts(Object.fromEntries(pairs)));
+  }, [events]);
 
-// ── Featured banner ───────────────────────────────────────────────────────────
-function FeaturedBanner({ ev, onEdit, isAdminOrSuperAdmin, onRsvp, userId }: { ev: Event; onEdit?: () => void; isAdminOrSuperAdmin: boolean; onRsvp?: (ev: Event) => void; userId?: string }) {
-  const b = badge(ev);
   return (
-    <div className="bg-[#1B2E6B] rounded-2xl overflow-hidden relative h-52 flex items-end">
-      {(ev as any).imageURL && (
-        <img src={(ev as any).imageURL} alt={ev.title} className="absolute inset-0 w-full h-full object-cover opacity-30" />
-      )}
-      <div className="relative p-6 w-full bg-gradient-to-t from-black/70 to-transparent flex items-end justify-between">
-        <div>
-          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${BADGE_STYLE[b]}`}>{b}</span>
-          <h2 className="text-white font-bold text-lg mt-2 line-clamp-2">{ev.title}</h2>
-          <div className="flex items-center gap-3 mt-1">
-            {(ev as any).startDate && (
-              <span className="text-white/60 text-xs flex items-center gap-1"><Clock size={10} />{fmtDate((ev as any).startDate)}</span>
-            )}
-            {(ev as any).location && (
-              <span className="text-white/60 text-xs flex items-center gap-1"><MapPin size={10} />{(ev as any).location}</span>
-            )}
-          </div>
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E7EB]">
+          <h3 className="text-xl font-bold text-[#111827]">{t("events.manage")}</h3>
+          <button onClick={onClose} className="text-[#6B7280]" aria-label={t("common.close")}><X size={20} /></button>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {isAdminOrSuperAdmin && onEdit && (
-            <button onClick={onEdit}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/20 text-white text-xs font-semibold hover:bg-white/30 transition-colors">
-              <Pencil size={12} /> Edit
-            </button>
-          )}
-          {!isAdminOrSuperAdmin && (() => {
-            const isRegistered = ((ev as any).rsvps ?? []).some((r: any) => r.userId === userId);
-            return (
-              <button
-                onClick={() => { if (!isRegistered && onRsvp) onRsvp(ev); }}
-                disabled={isRegistered}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-colors ${isRegistered ? 'bg-green-400 text-white cursor-default' : 'bg-[#F5C518] text-[#1B2E6B] hover:bg-[#e6b800]'}`}>
-                {isRegistered ? '✓ Registered' : <><span>Register Now</span> <ChevronRight size={14} /></>}
-              </button>
-            );
-          })()}
+        <div className="max-h-[65vh] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-[#F9FAFB]">
+              <tr className="text-left text-[11px] font-bold tracking-wider uppercase text-[#6B7280]">
+                <th className="px-6 py-3">{t("events.event")}</th><th className="px-3 py-3">{t("events.date")}</th><th className="px-3 py-3">{t("events.category")}</th><th className="px-3 py-3">{t("events.going")}</th><th className="px-3 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#F3F4F6]">
+              {events.map((e) => (
+                <tr key={e.id} className="hover:bg-[#F9FAFB]">
+                  <td className="px-6 py-3 font-medium text-[#111827]">{e.title}{e.featured && <Star size={12} className="inline ml-1.5 text-[#F5C518] fill-[#F5C518]" />}</td>
+                  <td className="px-3 py-3 text-[#4B5563] whitespace-nowrap">{rangeLabel(e)}</td>
+                  <td className="px-3 py-3 text-[#4B5563]">{e.category ? t(`eventCat.${e.category}`, { defaultValue: e.category }) : "—"}</td>
+                  <td className="px-3 py-3 text-[#111827] font-semibold">{counts[e.id] ?? "…"}</td>
+                  <td className="px-3 py-3"><button onClick={() => onEdit(e)} className="px-3 py-1.5 rounded-lg bg-[#1B2E6B] text-white text-xs font-semibold">{t("common.edit")}</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -349,141 +213,302 @@ function FeaturedBanner({ ev, onEdit, isAdminOrSuperAdmin, onRsvp, userId }: { e
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function EventsPage() {
+  const { t } = useTranslation();
   const { user, role } = useAuth();
-  const isAdminOrSuperAdmin = role === "admin" || role === "super_admin";
-  const [events, setEvents]       = useState<Event[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [activeCat, setActiveCat] = useState<Cat>("All");
-  const [search, setSearch]       = useState("");
-  const [showForm, setShowForm]   = useState(false);
-  const [editEvent, setEditEvent] = useState<Event | null>(null);
+  const isStaff = role === "admin" || role === "super_admin";
+  const toast = useToast();
+  const [events, setEvents]   = useState<EventDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState<string | null>(null);
+  const [showPast, setShowPast] = useState(false);
+  const [myRsvps, setMyRsvps] = useState<Record<string, RsvpDoc["status"]>>({});
+  const [openId, setOpenId]   = useState<string | null>(null);
+  const [form, setForm]       = useState<EventDoc | null | undefined>(undefined);
+  const [managing, setManaging] = useState(false);
 
-  function load() {
-    setLoading(true);
-    getDocs(query(collection(db, "events"), orderBy("createdAt", "desc")))
-      .then((snap) => setEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Event))))
-      .finally(() => setLoading(false));
-  }
-  useEffect(() => { load(); }, []);
+  useEffect(() => onSnapshot(query(collection(db, "events"), orderBy("startDate", "asc")), (snap) => {
+    setEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventDoc)));
+    setLoading(false);
+  }, () => setLoading(false)), []);
 
-  async function handleRsvp(ev: Event) {
+  // The member's own RSVP for each event (one small read per event).
+  useEffect(() => {
+    if (!user || events.length === 0) return;
+    Promise.all(events.map(async (e) => {
+      const s = await getDoc(doc(db, "events", e.id, "rsvps", user.id)).catch(() => null);
+      const status = s?.exists() ? (s.data().status as RsvpDoc["status"])
+        : e.rsvps?.some((r) => r.userId === user.id) ? "attending" : null;
+      return [e.id, status] as const;
+    })).then((pairs) => setMyRsvps(Object.fromEntries(pairs.filter(([, s]) => s)) as Record<string, RsvpDoc["status"]>));
+  }, [user, events]);
+
+  const saved = new Set<string>(((user as unknown as { savedEvents?: string[] })?.savedEvents) ?? []);
+  const now = Date.now();
+  const upcoming = events.filter((e) => (eventRange(e)?.end.getTime() ?? now) >= now);
+  const visible = (showPast ? events : upcoming).filter((e) => !category || e.category === category);
+  const featured = visible.find((e) => e.featured) ?? visible[0];
+  const rest = visible.filter((e) => e.id !== featured?.id);
+  const tickets = upcoming.filter((e) => myRsvps[e.id] === "attending");
+  const savedList = events.filter((e) => saved.has(e.id));
+  const opened = events.find((e) => e.id === openId) ?? null;
+
+  async function rsvp(e: EventDoc, status: RsvpDoc["status"] | null) {
     if (!user) return;
-    const rsvpEntry = { userId: user.id, userName: user.displayName || user.email, registeredAt: new Date().toISOString() };
-    await updateDoc(doc(db, "events", ev.id), {
-      rsvps: arrayUnion(rsvpEntry),
-    });
-    setEvents((prev) => prev.map((e) => e.id === ev.id ? { ...e, rsvps: [...((e as any).rsvps ?? []), rsvpEntry] } as Event : e));
+    try {
+      if (status) await setRsvp(e.id, user, status);
+      else await clearRsvp(e.id, user.id);
+      setMyRsvps((m) => {
+        const next = { ...m };
+        if (status) next[e.id] = status; else delete next[e.id];
+        return next;
+      });
+      toast({ message: status === "attending" ? t("events.going_to", { title: e.title }) : status === "not_attending" ? t("events.rsvpUpdated") : t("events.rsvpRemoved") });
+    } catch {
+      toast({ type: "error", message: t("events.rsvpError") });
+    }
+  }
+
+  async function toggleSave(e: EventDoc) {
+    if (!user) return;
+    const has = saved.has(e.id);
+    await updateDoc(doc(db, "users", user.id), { savedEvents: has ? arrayRemove(e.id) : arrayUnion(e.id) });
+    toast({ message: has ? t("events.unsaved") : t("events.savedToast") });
+  }
+
+  async function remind(e: EventDoc) {
+    const s = await getDocs(collection(db, "events", e.id, "rsvps"));
+    const ids = new Set([
+      ...s.docs.filter((d) => d.data().status === "attending").map((d) => d.id),
+      ...(e.rsvps ?? []).map((r) => r.userId),
+    ]);
+    if (ids.size === 0) { toast({ type: "error", message: t("events.noOneRsvp") }); return; }
+    await notify(Array.from(ids).map((uid) => ({
+      userId: uid, type: "event_reminder", link: "/events",
+      title: `Reminder: ${e.title}`,
+      description: `${rangeLabel(e)} · ${timeLabel(e)}${e.location ? ` · ${e.location}` : ""}`,
+    })));
+    toast({ message: t("events.reminderSent", { count: ids.size }) });
   }
 
   if (!user) return null;
 
-  const filtered = events.filter((e) => {
-    const matchCat = activeCat === "All" || (e as any).category === activeCat;
-    const matchSearch = !search || e.title.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
-  });
-
-  const featured = filtered.find((e) => (e as any).featured) ?? filtered[0];
-  const rest = filtered.filter((e) => e !== featured);
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="grid xl:grid-cols-[1fr_340px] gap-7 items-start">
+      <div className="space-y-8 min-w-0">
         <div>
-          <h1 className="text-xl font-bold text-[#1B2E6B]">Events</h1>
-          <p className="text-[#9CA3AF] text-sm mt-0.5">Upcoming spiritual gatherings and community programs</p>
+          <PageTitle id="events" />
         </div>
-        {isAdminOrSuperAdmin && (
-          <div className="flex gap-2">
-            <button onClick={() => { setEditEvent(null); setShowForm(true); }}
-              className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
-              <Plus size={15} /> Create Event
-            </button>
+
+        {/* Category tiles */}
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+          {EVENT_CATEGORIES.map((c) => {
+            const Icon = CATEGORY_ICONS[c] ?? CalendarDays;
+            const active = category === c;
+            return (
+              <button key={c} onClick={() => setCategory(active ? null : c)}
+                className={`bg-white rounded-2xl p-3 pb-4 flex flex-col items-center gap-2.5 transition-all hover:-translate-y-0.5 hover:shadow-md ${active ? "ring-2 ring-[#F5C518] shadow-md" : "shadow-sm"}`}>
+                <span className={`w-full h-10 rounded-lg flex items-center justify-center ${active ? "bg-[#FFF8DB] text-[#1B2E6B]" : "bg-[#EEF1F8] text-[#4B5563]"}`}><Icon size={18} /></span>
+                <span className="text-xs sm:text-[13px] text-[#111827] text-center leading-tight">{t(`eventCat.${c}`, { defaultValue: c })}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {loading ? (
+          <div className="py-16"><div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" /></div>
+        ) : !featured ? (
+          <div className="bg-white rounded-2xl p-12 text-center text-[#9CA3AF]">
+            <CalendarDays size={36} className="mx-auto mb-2 opacity-30" />
+            <p className="text-sm">{category ? t("events.noneInCategory", { category: t(`eventCat.${category}`, { defaultValue: category }) }) : t("events.noUpcoming")}</p>
+            {isStaff && (
+              <button onClick={() => setForm(null)} className="mt-4 inline-flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2 rounded-xl">
+                <Plus size={14} /> {t("events.create")}
+              </button>
+            )}
           </div>
+        ) : (
+          <>
+            {/* Featured */}
+            <div className="relative h-[340px] rounded-3xl overflow-hidden shadow-xl group cursor-pointer max-w-[600px]" onClick={() => setOpenId(featured.id)}>
+              {featured.imageURL
+                ? <img src={featured.imageURL} alt="" className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                : <div className="absolute inset-0 bg-gradient-to-br from-[#1B2E6B] to-[#2a4499]" />}
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0B1430]/90 via-[#0B1430]/30 to-transparent" />
+              <div className="absolute bottom-6 left-7 right-7 flex items-end justify-between gap-4">
+                <div className="text-white">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F5C518] text-[#111827] text-[11px] font-bold"><Star size={11} fill="currentColor" /> {t("events.featured")}</span>
+                  <p className="font-display text-3xl font-bold mt-2 leading-tight">{featured.title}</p>
+                  <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-sm text-white/90">
+                    <span className="flex items-center gap-1.5"><CalendarDays size={14} className="text-[#F5C518]" />{rangeLabel(featured)}</span>
+                    {featured.location && <span className="flex items-center gap-1.5"><MapPin size={14} className="text-[#F5C518]" />{featured.location}</span>}
+                  </div>
+                </div>
+                {isStaff ? (
+                  <button onClick={(e) => { e.stopPropagation(); setForm(featured); }} className="flex-shrink-0 px-6 py-4 rounded-2xl bg-[#F5C518] text-[#111827] font-semibold shadow-lg hover:bg-[#e6b800]">{t("events.edit")}</button>
+                ) : (
+                  <button onClick={(e) => { e.stopPropagation(); rsvp(featured, myRsvps[featured.id] === "attending" ? null : "attending"); }}
+                    className={`flex-shrink-0 px-6 py-4 rounded-2xl font-semibold shadow-lg ${myRsvps[featured.id] === "attending" ? "bg-[#16A34A] text-white" : "bg-[#F5C518] text-[#111827] hover:bg-[#e6b800]"}`}>
+                    {myRsvps[featured.id] === "attending" ? t("events.booked") : t("events.bookNow")}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Cards */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-semibold text-[#111827]">{showPast ? t("events.all") : t("events.recommended")}</h2>
+                <button onClick={() => setShowPast((v) => !v)} className="flex items-center gap-1 text-sm font-semibold text-[#111827] hover:text-[#1B2E6B]">
+                  {showPast ? t("events.upcomingOnly") : t("events.viewAll")} <ChevronRight size={15} />
+                </button>
+              </div>
+              {rest.length === 0 ? (
+                <p className="text-sm text-[#4B5563]">{t("events.noOthers")}</p>
+              ) : (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger">
+                  {rest.map((e) => {
+                    const b = priceBadge(e);
+                    const going = myRsvps[e.id] === "attending";
+                    return (
+                      <div key={e.id} className="bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col group">
+                        <button onClick={() => setOpenId(e.id)} className="relative h-44 bg-[#EEF1F8] overflow-hidden text-left">
+                          {e.imageURL
+                            ? <img src={e.imageURL} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                            : <div className="w-full h-full flex items-center justify-center text-[#1B2E6B]/30"><CalendarDays size={40} /></div>}
+                          <span className={`absolute top-3 right-3 px-2.5 py-1 rounded-full text-[10px] font-bold shadow ${b.cls}`}>{b.label}</span>
+                        </button>
+                        <div className="p-5 flex-1 flex flex-col">
+                          <button onClick={() => setOpenId(e.id)} className="text-left">
+                            <p className="text-[15px] font-bold tracking-wide uppercase text-[#111827] line-clamp-2">{e.title}</p>
+                            <p className="text-[#1B2E6B] text-sm font-medium mt-1">{partOfDay(e)}</p>
+                          </button>
+                          <div className="mt-4 space-y-2.5 text-[13px] text-[#4B5563]">
+                            <p className="flex items-center gap-2"><Clock size={13} /> {rangeLabel(e)} • {timeLabel(e)}</p>
+                            {e.location && <p className="flex items-center gap-2"><MapPin size={13} /> <span className="truncate">{e.location}</span></p>}
+                          </div>
+                          <div className="mt-auto pt-5">
+                            {isStaff ? (
+                              <button onClick={() => remind(e)} className="w-full py-2.5 rounded-xl bg-[#E2E7F0] text-[#111827] font-medium hover:bg-[#D3DAE8]">{t("events.sendReminder")}</button>
+                            ) : (
+                              <button onClick={() => rsvp(e, going ? null : "attending")}
+                                className={`w-full py-2.5 rounded-xl font-medium ${going ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#E2E7F0] text-[#111827] hover:bg-[#D3DAE8]"}`}>
+                                {going ? t("events.registered") : t("events.register")}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 
-      {/* Category tabs + search */}
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-        <div className="flex gap-1 bg-white rounded-xl border border-[#E5E7EB] p-1 overflow-x-auto">
-          {CATEGORIES.map((c) => (
-            <button key={c} onClick={() => setActiveCat(c)}
-              className={[
-                "px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors",
-                activeCat === c ? "bg-[#1B2E6B] text-white" : "text-[#6B7280] hover:text-[#1B2E6B]",
-              ].join(" ")}>
-              {c}
-            </button>
-          ))}
-        </div>
-        <div className="relative w-full sm:w-56">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search events…"
-            className="w-full pl-9 pr-4 py-2 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B]" />
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="py-16 text-center">
-          <div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" />
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="py-16 text-center text-[#9CA3AF]">
-          <Calendar size={36} className="mx-auto mb-2 opacity-30" />
-          <p className="text-sm">No events found.</p>
-          {isAdminOrSuperAdmin && (
-            <button onClick={() => { setEditEvent(null); setShowForm(true); }}
-              className="mt-3 flex items-center gap-1.5 mx-auto bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2 rounded-xl hover:bg-[#e6b800] transition-colors">
-              <Plus size={14} /> Create First Event
-            </button>
+      {/* Right panel */}
+      <aside className="bg-white rounded-2xl shadow-sm p-6 space-y-7 xl:sticky xl:top-24">
+        <div className="text-center">
+          {user.photoURL
+            ? <img src={user.photoURL} alt="" className="w-24 h-24 rounded-full object-cover mx-auto ring-4 ring-[#F5C518]" />
+            : <div className="w-24 h-24 rounded-full mx-auto ring-4 ring-[#F5C518] bg-[#1B2E6B] text-white text-3xl font-bold flex items-center justify-center">{(user.displayName || user.email)[0].toUpperCase()}</div>}
+          <p className="text-xl font-bold text-[#1B2E6B] mt-3">{user.displayName || t("status.member")}</p>
+          <p className="text-sm text-[#9CA3AF]">{user.email}</p>
+          {isStaff && (
+            <div className="mt-6 space-y-3">
+              <button onClick={() => setForm(null)} className="w-full py-3 rounded-xl bg-[#F5C518] text-[#111827] font-semibold shadow-[0_10px_24px_-12px_rgba(245,197,24,0.9)] hover:bg-[#e6b800]">{t("events.createNew")}</button>
+              <button onClick={() => setManaging(true)} className="w-full py-3 rounded-xl bg-[#F5C518] text-[#111827] font-semibold shadow-[0_10px_24px_-12px_rgba(245,197,24,0.9)] hover:bg-[#e6b800]">{t("events.manage")}</button>
+            </div>
           )}
         </div>
-      ) : (
-        <>
-          {/* Featured banner */}
-          {featured && (
-            <FeaturedBanner ev={featured} isAdminOrSuperAdmin={isAdminOrSuperAdmin}
-              userId={user.id}
-              onRsvp={handleRsvp}
-              onEdit={() => { setEditEvent(featured); setShowForm(true); }} />
-          )}
 
-          {/* Grid */}
-          {rest.length > 0 && (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {rest.map((ev) => (
-                <EventCard key={ev.id} ev={ev} isAdminOrSuperAdmin={isAdminOrSuperAdmin}
-                  userId={user.id}
-                  onRsvp={handleRsvp}
-                  onEdit={() => { setEditEvent(ev); setShowForm(true); }} />
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-lg font-semibold text-[#111827]">{t("events.activeRsvps")}</p>
+            <span className="text-sm text-[#111827]">{t("events.tickets", { count: tickets.length })}</span>
+          </div>
+          {tickets.length === 0 ? (
+            <p className="text-sm text-[#9CA3AF]">{t("events.ticketsEmpty")}</p>
+          ) : (
+            <div className="space-y-3">
+              {tickets.map((e) => {
+                const r = eventRange(e);
+                const live = r && r.start.getTime() - now < 7 * 86400000;
+                return (
+                  <button key={e.id} onClick={() => setOpenId(e.id)} className="w-full text-left bg-white rounded-2xl border border-[#EEF1F8] shadow-md p-5 hover:shadow-lg transition-shadow">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-semibold text-[#1B2E6B]">{e.title}</p>
+                        <p className="text-xs text-[#9CA3AF]">{rangeLabel(e)}</p>
+                      </div>
+                      <QrCode size={20} className="text-[#F5C518] flex-shrink-0" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-4">
+                      {[[t("events.venue"), e.location || t("events.tba")], [t("events.group"), e.category ? t(`eventCat.${e.category}`, { defaultValue: e.category }) : t("events.event")], ["ID", `#${e.id.slice(0, 4).toUpperCase()}`]].map(([k, v]) => (
+                        <div key={k}>
+                          <p className="text-[9px] font-bold tracking-widest text-[#9CA3AF]">{k}</p>
+                          <p className="text-xs font-bold text-[#1B2E6B] uppercase truncate">{v}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between mt-4 pt-3 border-t border-dashed border-[#E5E7EB]">
+                      <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-[#9CA3AF]">
+                        <span className={`w-1.5 h-1.5 rounded-full ${live ? "bg-[#22C55E]" : "bg-[#D1D5DB]"}`} /> {live ? t("events.activeRsvp") : t("events.upcoming")}
+                      </span>
+                      <span className="text-[11px] font-semibold text-[#111827]">{timeLabel(e)}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="text-lg font-semibold text-[#111827] mb-3">{t("events.savedEvents")}</p>
+          {savedList.length === 0 ? (
+            <p className="text-sm text-[#9CA3AF]">{t("events.savedEmpty")}</p>
+          ) : (
+            <div className="space-y-3">
+              {savedList.map((e) => (
+                <div key={e.id} className="flex items-center gap-3 bg-[#F8FAFC] rounded-xl p-2.5 pr-3">
+                  <button onClick={() => setOpenId(e.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                    {e.imageURL
+                      ? <img src={e.imageURL} alt="" className="w-14 h-14 rounded-lg object-cover" />
+                      : <span className="w-14 h-14 rounded-lg bg-[#EEF1F8] flex items-center justify-center text-[#1B2E6B]"><CalendarDays size={18} /></span>}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[#1B2E6B] truncate">{e.title}</p>
+                      <p className="text-xs text-[#9CA3AF]">{rangeLabel(e)} • {priceBadge(e).label}</p>
+                    </div>
+                  </button>
+                  <button onClick={() => toggleSave(e)} className="w-7 h-7 rounded-lg bg-[#FFF8DB] text-[#1B2E6B] flex items-center justify-center" aria-label={t("events.unsave")}><BookmarkCheck size={14} /></button>
+                </div>
               ))}
             </div>
           )}
-        </>
-      )}
-
-      {/* Admin sidebar CTA strip */}
-      {isAdminOrSuperAdmin && (
-        <div className="bg-[#1B2E6B] rounded-2xl p-5 flex items-center justify-between">
-          <div>
-            <p className="text-white font-bold text-sm">Manage all events</p>
-            <p className="text-white/60 text-xs mt-0.5">{events.length} total event{events.length !== 1 ? "s" : ""} in your community</p>
-          </div>
-          <button onClick={() => { setEditEvent(null); setShowForm(true); }}
-            className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2 rounded-xl hover:bg-[#e6b800] transition-colors">
-            <Plus size={14} /> New Event
-          </button>
         </div>
-      )}
+      </aside>
 
-      {/* Form modal */}
-      {showForm && (
+      {opened && (
+        <EventDetails
+          ev={opened}
+          isStaff={isStaff}
+          myRsvp={myRsvps[opened.id] ?? null}
+          saved={saved.has(opened.id)}
+          onClose={() => setOpenId(null)}
+          onRsvp={(s) => rsvp(opened, s)}
+          onSave={() => toggleSave(opened)}
+          onEdit={() => { setOpenId(null); setForm(opened); }}
+          onRemind={() => remind(opened)}
+        />
+      )}
+      {managing && <ManageEvents events={events} onClose={() => setManaging(false)} onEdit={(e) => { setManaging(false); setForm(e); }} />}
+      {form !== undefined && (
         <EventFormModal
-          initial={editEvent}
-          onClose={() => { setShowForm(false); setEditEvent(null); }}
-          onSaved={() => { setShowForm(false); setEditEvent(null); load(); }}
+          initial={form}
+          onClose={() => setForm(undefined)}
+          onSaved={(msg) => { setForm(undefined); toast({ message: msg }); }}
         />
       )}
     </div>

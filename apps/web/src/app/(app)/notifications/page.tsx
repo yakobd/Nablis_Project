@@ -8,8 +8,10 @@ import { db, useAuth } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import {
   Bell, CheckCircle2, XCircle, Calendar, BookOpen,
-  Users, Star, UserCheck, Hand,
+  Users, Star, UserCheck, Hand, Trophy,
 } from "lucide-react";
+import { useTranslation } from "@nablis/i18n";
+import i18n from "@nablis/i18n";
 
 interface Notification {
   id: string;
@@ -32,6 +34,8 @@ const TYPE_META: Record<string, { icon: React.ReactNode; filterKey: string }> = 
   new_member:            { icon: <Users size={16} className="text-purple-500" />,         filterKey: "Members" },
   testimony_approved:    { icon: <Star size={16} className="text-[#F5C518]" />,          filterKey: "Posts" },
   member_approved:       { icon: <UserCheck size={16} className="text-green-500" />,     filterKey: "Members" },
+  testimony:             { icon: <Star size={16} className="text-[#F5C518]" />,          filterKey: "Posts" },
+  challenge:             { icon: <Trophy size={16} className="text-[#CA8A04]" />,        filterKey: "Posts" },
 };
 
 const FILTERS = ["All", "Unread", "Events", "Appointments", "Prayers", "Posts", "Members"] as const;
@@ -44,13 +48,14 @@ function timeAgo(ts: Timestamp | null): string {
     const mins  = Math.floor(diff / 60000);
     const hours = Math.floor(mins / 60);
     const days  = Math.floor(hours / 24);
-    if (days > 0)  return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
-    return `${mins || 1}m ago`;
+    if (days > 0)  return i18n.t("time.daysAgo", { count: days });
+    if (hours > 0) return i18n.t("time.hoursAgo", { count: hours });
+    return i18n.t("time.minsAgo", { count: mins || 1 });
   } catch { return ""; }
 }
 
 export default function NotificationsPage() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const router   = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -118,13 +123,13 @@ export default function NotificationsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-[#1B2E6B]">Notifications</h1>
-          <p className="text-[#9CA3AF] text-sm mt-0.5">{unreadCount} unread</p>
+          <h1 className="text-xl font-bold text-[#1B2E6B]">{t("nav.notifications")}</h1>
+          <p className="text-[#9CA3AF] text-sm mt-0.5">{t("notif.unread", { n: unreadCount })}</p>
         </div>
         {unreadCount > 0 && (
           <button onClick={markAllRead}
             className="text-xs font-semibold text-[#1B2E6B] hover:text-[#F5C518] transition-colors">
-            Mark all as read
+            {t("notif.markAll")}
           </button>
         )}
       </div>
@@ -137,7 +142,7 @@ export default function NotificationsPage() {
               "px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors",
               filter === f ? "bg-[#1B2E6B] text-white" : "text-[#6B7280] hover:text-[#1B2E6B]",
             ].join(" ")}>
-            {f}
+            {t(`notif.filter.${f}`)}
           </button>
         ))}
       </div>
@@ -151,7 +156,7 @@ export default function NotificationsPage() {
         ) : displayed.length === 0 ? (
           <div className="py-16 text-center text-[#9CA3AF]">
             <Bell size={36} className="mx-auto mb-2 opacity-20" />
-            <p className="text-sm">No notifications yet.</p>
+            <p className="text-sm">{t("notif.none")}</p>
           </div>
         ) : (
           <div className="divide-y divide-[#F3F4F6]">

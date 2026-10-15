@@ -42,7 +42,7 @@ export function BlogCard({ post, featured = false }: BlogCardProps) {
 
   if (featured) {
     return (
-      <article className="bg-white rounded-2xl overflow-hidden border border-[#E5E7EB] shadow-sm md:flex group">
+      <article className="bg-white rounded-2xl overflow-hidden border border-[#E5E7EB] shadow-sm hover:shadow-[0_18px_40px_-20px_rgba(27,46,107,0.35)] transition-shadow duration-300 md:flex group">
         {/* Image */}
         <div className="md:w-2/5 aspect-video md:aspect-auto overflow-hidden bg-[#EEF1F8] flex items-center justify-center">
           {post.imageURL ? (
@@ -99,7 +99,7 @@ export function BlogCard({ post, featured = false }: BlogCardProps) {
   }
 
   return (
-    <article className="bg-white rounded-2xl overflow-hidden border border-[#E5E7EB] shadow-sm hover:shadow-md transition-shadow group flex flex-col">
+    <article className="h-full bg-white rounded-2xl overflow-hidden border border-[#E5E7EB] shadow-sm hover:shadow-[0_18px_40px_-20px_rgba(27,46,107,0.35)] hover:-translate-y-1 hover:border-[#D8DFEE] transition-all duration-300 group flex flex-col">
       <div className="aspect-[16/9] overflow-hidden bg-[#EEF1F8]">
         {post.imageURL ? (
           <img

@@ -127,7 +127,7 @@ async function seedUsers() {
     {
       uid: ADMIN_UID,
       email: 'superadmin@nablis.org',
-      password: 'Admin@Nablis2024',
+      password: process.env.TEST_USER_PASSWORD ?? '',
       displayName: 'መጋቢ ሐዲስ ቀሲስ ሳሙኤል አያልነህ(ዶ/ር)',
       firestoreData: {
         email: 'superadmin@nablis.org',

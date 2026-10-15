@@ -1,8 +1,11 @@
 "use client";
 import React, { useState } from "react";
-import { useAuth } from "@/lib/firebase";
-import { Eye, EyeOff, AlertCircle } from "lucide-react";
-import Link from "next/link";
+import {
+  browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail, setPersistence,
+} from "firebase/auth";
+import { auth, useAuth } from "@/lib/firebase";
+import { Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react";
+import { AuthShell, FIELD, LABEL } from "@/components/auth/AuthShell";
 
 const ERROR_MESSAGES: Record<string, string> = {
   "auth/invalid-credential": "Incorrect email or password. Please try again.",
@@ -10,25 +13,30 @@ const ERROR_MESSAGES: Record<string, string> = {
   "auth/wrong-password": "Incorrect password. Please try again.",
   "auth/too-many-requests": "Too many failed attempts. Please try again later.",
   "auth/network-request-failed": "Network error. Check your connection.",
+  "auth/invalid-email": "Please enter a valid email address.",
 };
 
 export default function LoginPage() {
   const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim() || !password) return;
     setError("");
+    setNotice("");
     setLoading(true);
     try {
+      // "Remember me" keeps the session after the browser closes.
+      await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
       await signIn(email.trim(), password);
-      // session cookie is set in layout.tsx via useEffect after auth state resolves
-      // router.replace('/dashboard') is also handled in layout.tsx
+      // session cookie and redirect are handled in (app)/layout.tsx
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? "";
       setError(ERROR_MESSAGES[code] ?? "Something went wrong. Please try again.");
@@ -37,94 +45,107 @@ export default function LoginPage() {
     }
   }
 
+  async function handleForgot() {
+    setError("");
+    setNotice("");
+    if (!email.trim()) {
+      setError("Enter your email above, then tap “Forgot password?” again.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setNotice("Password reset link sent. Please check your email.");
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code ?? "";
+      setError(ERROR_MESSAGES[code] ?? "Could not send the reset email. Please try again.");
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-[#EEF1F8] flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <img src="/Logo-Blue.png" alt="Nablis" className="h-20 w-auto mx-auto mb-4" />
-          <p className="text-[#9CA3AF] text-sm mt-1">Sign in to your account</p>
+    <AuthShell
+      mode="login"
+      title="Welcome, fill in your details to sign in!"
+      footer={<p>New members require approval from the Spiritual Father.</p>}
+    >
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div>
+          <label className={LABEL}>Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoComplete="email"
+            placeholder="Your registered email"
+            className={FIELD}
+          />
         </div>
 
-        {/* Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-[#E5E7EB] p-7">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#374151] mb-1.5">
-                Email Address
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-                placeholder="you@example.com"
-                className="w-full px-4 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[#374151] mb-1.5">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  className="w-full px-4 py-2.5 pr-10 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
-
-            {error && (
-              <div className="flex items-start gap-2 text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2.5">
-                <AlertCircle size={15} className="flex-shrink-0 mt-0.5" />
-                <span>{error}</span>
-              </div>
-            )}
-
+        <div>
+          <label className={LABEL}>Password</label>
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+              placeholder="••••••••"
+              className={FIELD + " pr-8"}
+            />
             <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 bg-[#1B2E6B] text-white font-semibold py-2.5 rounded-xl hover:bg-[#162554] active:bg-[#111d44] transition-colors disabled:opacity-60 disabled:cursor-not-allowed mt-2"
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-0 top-1/2 -translate-y-1/2 text-white/60 hover:text-white"
+              aria-label={showPassword ? "Hide password" : "Show password"}
             >
-              {loading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                  Signing in…
-                </>
-              ) : (
-                "Sign In"
-              )}
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
-          </form>
+          </div>
         </div>
 
-        <div className="text-center mt-5 space-y-2">
-          <p className="text-[#9CA3AF] text-xs">
-            Don&apos;t have an account?{" "}
-            <Link href="/register" className="text-[#1B2E6B] font-semibold hover:underline">
-              Create Account
-            </Link>
-          </p>
-          <p className="text-center text-[#9CA3AF] text-xs">
-            Nablis Ministry · Dubai, UAE
-          </p>
+        <div className="flex items-center justify-between text-sm text-white/85">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
+              className="w-4 h-4 rounded-full accent-[#F5C518]" />
+            Remember me
+          </label>
+          <button type="button" onClick={handleForgot}
+            className="underline decoration-dotted underline-offset-4 hover:text-[#F5C518]">
+            Forgot password?
+          </button>
         </div>
-      </div>
-    </div>
+
+        {error && (
+          <div className="flex items-start gap-2 text-red-100 text-sm bg-red-500/25 border border-red-300/30 rounded-xl px-3 py-2.5 animate-scale-in">
+            <AlertCircle size={15} className="flex-shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
+        {notice && (
+          <div className="flex items-start gap-2 text-green-50 text-sm bg-green-500/25 border border-green-300/30 rounded-xl px-3 py-2.5 animate-scale-in">
+            <CheckCircle size={15} className="flex-shrink-0 mt-0.5" />
+            <span>{notice}</span>
+          </div>
+        )}
+
+        <div className="flex justify-center pt-1">
+          <button
+            type="submit"
+            disabled={loading}
+            className="min-w-[220px] flex items-center justify-center gap-2 bg-white/85 text-[#111827] text-lg font-medium py-3 px-8 rounded-full hover:bg-white hover:shadow-[0_10px_30px_-10px_rgba(245,197,24,0.6)] disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-[#111827]/30 border-t-[#111827] rounded-full animate-spin" />
+                Signing in…
+              </>
+            ) : (
+              "Sign in"
+            )}
+          </button>
+        </div>
+      </form>
+    </AuthShell>
   );
 }

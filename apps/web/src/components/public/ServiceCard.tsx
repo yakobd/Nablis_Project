@@ -21,9 +21,9 @@ export function ServiceCard({
   accentColor = "#1B2E6B",
 }: ServiceCardProps) {
   return (
-    <div className="bg-white rounded-2xl p-6 border border-[#E5E7EB] shadow-sm hover:shadow-md transition-all duration-200 group flex flex-col">
+    <div className="h-full bg-white rounded-2xl p-6 border border-[#E5E7EB] shadow-sm hover:shadow-[0_18px_40px_-20px_rgba(27,46,107,0.35)] hover:-translate-y-1 hover:border-[#D8DFEE] transition-all duration-300 group flex flex-col">
       <div
-        className="w-12 h-12 rounded-xl flex items-center justify-center mb-5 transition-colors duration-200"
+        className="w-12 h-12 rounded-xl flex items-center justify-center mb-5 transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-3"
         style={{ backgroundColor: `${accentColor}15` }}
       >
         <span style={{ color: accentColor }}>{icon}</span>

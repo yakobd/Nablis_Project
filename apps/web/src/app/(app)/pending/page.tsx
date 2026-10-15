@@ -31,7 +31,7 @@ export default function PendingPage() {
 
   return (
     <div className="min-h-screen bg-[#EEF1F8] flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md stagger">
         {/* Logo */}
         <div className="text-center mb-6">
           <img src="/Logo-Blue.png" alt="Nablis" className="h-20 w-auto mx-auto mb-4" />

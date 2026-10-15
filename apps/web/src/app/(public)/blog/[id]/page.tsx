@@ -24,7 +24,8 @@ async function getRelatedPosts(category: string, excludeId: string): Promise<Blo
   try {
     const q = query(
       collection(db, "blogPosts"),
-      where("published", "==", true),
+      where("status", "==", "published"),
+      where("internal", "==", false),
       where("category", "==", category),
       limit(4)
     );

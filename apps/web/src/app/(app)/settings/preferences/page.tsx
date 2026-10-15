@@ -1,239 +1,193 @@
 "use client";
-import React, { useEffect, useState } from "react";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import React, { useEffect, useRef, useState } from "react";
+import { doc, updateDoc } from "firebase/firestore";
+import { Check } from "lucide-react";
 import { db, useAuth } from "@/lib/firebase";
-import { Sun, Moon, Monitor, CheckCircle, AlertCircle } from "lucide-react";
+import { useToast } from "@/components/ui/Toast";
+import {
+  applyDisplayPrefs, readDisplayPrefs, TEXT_SCALE_MAX, TEXT_SCALE_MIN, type Appearance,
+} from "@/lib/preferences";
+import { INPUT, SettingsPanel, Toggle } from "../_components/ui";
+import { useTranslation } from "@nablis/i18n";
 
-const TIMEZONES = [
-  "Asia/Dubai",
-  "Africa/Addis_Ababa",
-  "Europe/London",
-  "America/New_York",
-  "America/Los_Angeles",
-  "Asia/Riyadh",
+const TIMEZONES: { value: string; label: string }[] = [
+  { value: "Asia/Dubai",          label: "(GMT+04:00) Dubai, Abu Dhabi" },
+  { value: "Africa/Addis_Ababa",  label: "(GMT+03:00) Addis Ababa" },
+  { value: "Asia/Riyadh",         label: "(GMT+03:00) Riyadh" },
+  { value: "Europe/London",       label: "(GMT+00:00) London" },
+  { value: "America/New_York",    label: "(GMT-05:00) Eastern Time (US & Canada)" },
+  { value: "America/Los_Angeles", label: "(GMT-08:00) Pacific Time (US & Canada)" },
 ];
 
-type Appearance = "light" | "dark" | "system";
+interface Prefs {
+  language: "en" | "am";
+  timezone: string;
+  appearance: Appearance;
+  highContrast: boolean;
+  textScale: number;
+}
 
-const APPEARANCE_OPTIONS: { value: Appearance; label: string; icon: React.ReactNode }[] = [
-  { value: "light",  label: "Light",  icon: <Sun size={20} /> },
-  { value: "dark",   label: "Dark",   icon: <Moon size={20} /> },
-  { value: "system", label: "System", icon: <Monitor size={20} /> },
-];
+function fromUser(user: unknown): Prefs {
+  const p = ((user as { preferences?: Record<string, unknown> } | null)?.preferences ?? {});
+  return {
+    language: p.language === "am" ? "am" : "en",
+    timezone: typeof p.timezone === "string" ? p.timezone : Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Dubai",
+    ...readDisplayPrefs(user),
+  };
+}
 
-function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+// Small window mock-ups for the appearance cards.
+function ThemePreview({ kind }: { kind: Appearance }) {
+  const light = (
+    <div className="absolute inset-0 bg-[#F9FAFB]">
+      <div className="h-3 border-b border-[#E5E7EB] flex items-center gap-1 px-1.5"><span className="w-1 h-1 rounded-full bg-[#D1D5DB]" /><span className="w-1 h-1 rounded-full bg-[#D1D5DB]" /></div>
+      <div className="absolute left-0 top-3 bottom-0 w-5 border-r border-[#E5E7EB]" />
+      <div className="absolute left-8 right-3 top-6 h-1 rounded bg-[#E5E7EB]" />
+      <div className="absolute left-8 right-10 top-9 h-1 rounded bg-[#E5E7EB]" />
+    </div>
+  );
+  const dark = (
+    <div className="absolute inset-0 bg-[#111827]">
+      <div className="h-3 border-b border-white/10 flex items-center gap-1 px-1.5"><span className="w-1 h-1 rounded-full bg-white/30" /><span className="w-1 h-1 rounded-full bg-white/30" /></div>
+      <div className="absolute left-0 top-3 bottom-0 w-5 border-r border-white/10" />
+      <div className="absolute left-8 right-3 top-6 h-1 rounded bg-white/20" />
+      <div className="absolute left-8 right-10 top-9 h-1 rounded bg-white/20" />
+    </div>
+  );
   return (
-    <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-6">
-      <div className="mb-5">
-        <h2 className="text-[#1B2E6B] font-semibold text-sm">{title}</h2>
-        {description && <p className="text-[#9CA3AF] text-xs mt-0.5">{description}</p>}
-      </div>
-      {children}
+    <div className="relative h-20 rounded-lg overflow-hidden border border-[#E5E7EB]" data-keep-colors>
+      {kind === "dark" ? dark : light}
+      {kind === "system" && <div className="absolute inset-y-0 right-0 w-1/2 overflow-hidden"><div className="absolute inset-y-0 right-0 w-[200%]">{dark}</div></div>}
     </div>
   );
 }
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={[
-        "relative w-10 h-5 rounded-full transition-colors flex-shrink-0",
-        checked ? "bg-[#1B2E6B]" : "bg-[#D1D5DB]",
-      ].join(" ")}
-    >
-      <span
-        className={[
-          "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform",
-          checked ? "translate-x-5" : "translate-x-0.5",
-        ].join(" ")}
-      />
-    </button>
-  );
-}
-
-const SELECT = "w-full px-4 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] bg-white focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors";
-
-function applyAppearance(val: string) {
-  if (typeof document === 'undefined') return;
-  if (val === 'dark') document.documentElement.classList.add('dark');
-  else if (val === 'light') document.documentElement.classList.remove('dark');
-  else {
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches)
-      document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-  }
-}
-function applyFontSize(val: number) {
-  if (typeof document === 'undefined') return;
-  document.documentElement.style.fontSize = val + '%';
-}
-function applyHighContrast(val: boolean) {
-  if (typeof document === 'undefined') return;
-  if (val) document.documentElement.style.filter = 'contrast(1.2)';
-  else document.documentElement.style.filter = '';
-}
-
 export default function PreferencesPage() {
   const { user } = useAuth();
-  const [language, setLanguage]     = useState<"en" | "am">("en");
-  const [timezone, setTimezone]     = useState("Asia/Dubai");
-  const [appearance, setAppearance] = useState<Appearance>("system");
-  const [highContrast, setHighContrast] = useState(false);
-  const [fontSize, setFontSize]     = useState(80);
-  const [saving, setSaving]         = useState(false);
-  const [msg, setMsg]               = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [saved, setSaved] = useState<Prefs>(() => fromUser(user));
+  const [prefs, setPrefs] = useState<Prefs>(saved);
+  const [saving, setSaving] = useState(false);
+  const savedRef = useRef(saved);
+  savedRef.current = saved;
 
   useEffect(() => {
     if (!user) return;
-    getDoc(doc(db, "users", user.id)).then((snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data();
-      const prefs = data?.preferences ?? {};
-      if (prefs.language) setLanguage(prefs.language as "en" | "am");
-      if (prefs.timezone) setTimezone(prefs.timezone as string);
-      if (prefs.appearance) setAppearance(prefs.appearance as Appearance);
-      if (typeof prefs.highContrast === 'boolean') setHighContrast(prefs.highContrast as boolean);
-      if (typeof prefs.fontSize === 'number') setFontSize(prefs.fontSize as number);
-      applyAppearance(prefs.appearance ?? 'system');
-      applyFontSize(prefs.fontSize ?? 80);
-      applyHighContrast(prefs.highContrast ?? false);
-    });
+    const p = fromUser(user);
+    setSaved(p);
+    setPrefs(p);
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Preview changes live; put the saved look back if the user leaves without saving.
+  useEffect(() => { applyDisplayPrefs(prefs); }, [prefs.appearance, prefs.highContrast, prefs.textScale]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => applyDisplayPrefs(savedRef.current), []);
+
   if (!user) return null;
+  const dirty = JSON.stringify(prefs) !== JSON.stringify(saved);
+  const set = <K extends keyof Prefs>(k: K, v: Prefs[K]) => setPrefs((p) => ({ ...p, [k]: v }));
 
   async function save() {
     setSaving(true);
-    setMsg(null);
     try {
       await updateDoc(doc(db, "users", user!.id), {
-        "preferences.language":    language,
-        "preferences.timezone":    timezone,
-        "preferences.appearance":  appearance,
-        "preferences.highContrast": highContrast,
-        "preferences.fontSize":    fontSize,
+        "preferences.language": prefs.language,
+        "preferences.timezone": prefs.timezone,
+        "preferences.appearance": prefs.appearance,
+        "preferences.highContrast": prefs.highContrast,
+        "preferences.textScale": prefs.textScale,
       });
-      applyAppearance(appearance);
-      applyFontSize(fontSize);
-      applyHighContrast(highContrast);
-      setMsg({ type: "ok", text: "Preferences saved successfully." });
+      setSaved(prefs);
+      toast({ message: t("prefs.saved") });
     } catch {
-      setMsg({ type: "err", text: "Failed to save. Please try again." });
+      toast({ message: t("prefs.saveError"), type: "error" });
     } finally {
       setSaving(false);
     }
   }
 
+  const fill = ((prefs.textScale - TEXT_SCALE_MIN) / (TEXT_SCALE_MAX - TEXT_SCALE_MIN)) * 100;
+
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-[#1B2E6B]">Preferences</h1>
-        <p className="text-[#9CA3AF] text-sm mt-0.5">Customize your app experience</p>
+    <SettingsPanel title={t("prefs.title")} saveLabel={t("prefs.save")} onSave={save} onCancel={() => setPrefs(saved)} saving={saving} dirty={dirty}>
+      <div className="pb-6 border-b border-[#F3F4F6]">
+        <p className="text-lg font-semibold text-[#111827]">{t("prefs.general")}</p>
+        <p className="text-sm text-[#6B7280] mt-1">{t("prefs.generalHint")}</p>
       </div>
 
-      {/* Language & Timezone */}
-      <Section title="Language & Region">
-        <div className="grid sm:grid-cols-2 gap-4">
+      <div className="grid md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-6 py-7 border-b border-[#F3F4F6]">
+        <div>
+          <p className="font-semibold text-[#111827]">{t("prefs.languageRegion")}</p>
+          <p className="text-sm text-[#6B7280] mt-1">{t("prefs.languageRegionHint")}</p>
+        </div>
+        <div className="space-y-5">
           <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Language</label>
-            <select value={language} onChange={(e) => setLanguage(e.target.value as "en" | "am")} className={SELECT}>
-              <option value="en">English</option>
+            <label className="block text-sm text-[#111827] mb-2">{t("prefs.language")}</label>
+            <select value={prefs.language} onChange={(e) => set("language", e.target.value as Prefs["language"])} className={INPUT + " cursor-pointer"}>
+              <option value="en">English (US)</option>
               <option value="am">አማርኛ (Amharic)</option>
             </select>
+            {prefs.language === "am" && <p className="text-xs text-[#6B7280] mt-1.5">{t("prefs.amharicNote")}</p>}
           </div>
           <div>
-            <label className="block text-xs font-semibold text-[#374151] mb-1.5">Timezone</label>
-            <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className={SELECT}>
-              {TIMEZONES.map((tz) => (
-                <option key={tz} value={tz}>{tz.replace("_", " ")}</option>
-              ))}
+            <label className="block text-sm text-[#111827] mb-2">{t("prefs.timezone")}</label>
+            <select value={prefs.timezone} onChange={(e) => set("timezone", e.target.value)} className={INPUT + " cursor-pointer"}>
+              {!TIMEZONES.some((t) => t.value === prefs.timezone) && <option value={prefs.timezone}>{prefs.timezone.replace(/_/g, " ")}</option>}
+              {TIMEZONES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
         </div>
-      </Section>
+      </div>
 
-      {/* Appearance */}
-      <Section title="Appearance" description="Choose how the app looks">
+      <div className="grid md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-6 py-7 border-b border-[#F3F4F6]">
+        <div>
+          <p className="font-semibold text-[#111827]">{t("prefs.appearance")}</p>
+          <p className="text-sm text-[#6B7280] mt-1">{t("prefs.appearanceHint")}</p>
+        </div>
         <div className="grid grid-cols-3 gap-3">
-          {APPEARANCE_OPTIONS.map(({ value, label, icon }) => (
-            <button
-              key={value}
-              onClick={() => { setAppearance(value); applyAppearance(value); }}
-              className={[
-                "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all",
-                appearance === value
-                  ? "border-[#1B2E6B] bg-[#EEF1F8]"
-                  : "border-[#E5E7EB] hover:border-[#1B2E6B]/40",
-              ].join(" ")}
-            >
-              <span className={appearance === value ? "text-[#1B2E6B]" : "text-[#9CA3AF]"}>{icon}</span>
-              <span className={`text-xs font-semibold ${appearance === value ? "text-[#1B2E6B]" : "text-[#6B7280]"}`}>
-                {label}
-              </span>
+          {(["light", "dark", "system"] as Appearance[]).map((a) => (
+            <button key={a} type="button" onClick={() => set("appearance", a)}
+              className={`relative rounded-2xl border-2 p-1.5 pb-2.5 text-sm font-medium transition-all ${prefs.appearance === a ? "border-[#1E3A8A] shadow-[0_8px_20px_-12px_rgba(30,58,138,0.8)]" : "border-[#E5E7EB] hover:border-[#1E3A8A]/40"}`}>
+              <ThemePreview kind={a} />
+              <span className="block mt-2 text-[#111827]">{t(`prefs.${a}`)}</span>
+              {prefs.appearance === a && <span className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-[#1E3A8A] text-white flex items-center justify-center animate-pop"><Check size={12} /></span>}
             </button>
           ))}
         </div>
-      </Section>
+      </div>
 
-      {/* Accessibility */}
-      <Section title="Accessibility">
-        <div className="space-y-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-[#374151]">High Contrast Mode</p>
-              <p className="text-xs text-[#9CA3AF] mt-0.5">Increase contrast for better readability</p>
-            </div>
-            <Toggle checked={highContrast} onChange={(v) => { setHighContrast(v); applyHighContrast(v); }} />
-          </div>
-
+      <div className="grid md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-6 py-7 border-b border-[#F3F4F6]">
+        <div>
+          <p className="font-semibold text-[#111827]">{t("prefs.accessibility")}</p>
+          <p className="text-sm text-[#6B7280] mt-1">{t("prefs.accessibilityHint")}</p>
+        </div>
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-[#E5E7EB] px-5 py-4">
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="text-sm font-medium text-[#374151]">Font Size</p>
-                <p className="text-xs text-[#9CA3AF] mt-0.5">Adjust text size across the app</p>
-              </div>
-              <span className="text-sm font-bold text-[#1B2E6B]">{fontSize}%</span>
-            </div>
-            <input
-              type="range"
-              min={70}
-              max={120}
-              step={5}
-              value={fontSize}
-              onChange={(e) => { setFontSize(Number(e.target.value)); applyFontSize(Number(e.target.value)); }}
-              className="w-full accent-[#1B2E6B] cursor-pointer"
-            />
-            <div className="flex justify-between text-[10px] text-[#9CA3AF] mt-1">
-              <span>Small (70%)</span>
-              <span>Default (80%)</span>
-              <span>Large (120%)</span>
-            </div>
+            <p className="text-sm font-medium text-[#111827]">{t("prefs.highContrast")}</p>
+            <p className="text-xs text-[#6B7280] mt-0.5">{t("prefs.highContrastHint")}</p>
           </div>
+          <Toggle checked={prefs.highContrast} onChange={(v) => set("highContrast", v)} label={t("prefs.highContrast")} />
         </div>
-      </Section>
+      </div>
 
-      {msg && (
-        <div
-          className={`flex items-center gap-2 text-sm px-4 py-3 rounded-xl ${
-            msg.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
-          }`}
-        >
-          {msg.type === "ok" ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
-          {msg.text}
+      <div className="pt-7">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="font-semibold text-[#111827] uppercase tracking-wide">{t("prefs.fontSize")}</p>
+            <p className="text-xs text-[#6B7280] mt-1">{t("prefs.fontSizeHint")}</p>
+          </div>
+          <span className="text-sm font-semibold text-[#111827]">{prefs.textScale}%</span>
         </div>
-      )}
-
-      <button
-        onClick={save}
-        disabled={saving}
-        className="flex items-center gap-2 bg-[#1B2E6B] text-white font-semibold px-5 py-2.5 rounded-xl hover:bg-[#162554] transition-colors disabled:opacity-60 text-sm"
-      >
-        {saving && <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
-        Save Changes
-      </button>
-    </div>
+        <input type="range" min={TEXT_SCALE_MIN} max={TEXT_SCALE_MAX} step={5} value={prefs.textScale}
+          onChange={(e) => set("textScale", Number(e.target.value))} aria-label={t("prefs.fontSize")}
+          className="w-full mt-4 h-2 rounded-full appearance-none cursor-pointer accent-[#1E3A8A]"
+          style={{ background: `linear-gradient(to right, #1E3A8A ${fill}%, #E5E7EB ${fill}%)` }} />
+        <div className="flex justify-between text-[11px] text-[#9CA3AF] mt-2">
+          <span>{t("prefs.smaller")}</span>
+          <button type="button" onClick={() => set("textScale", 100)} className="hover:text-[#1E3A8A]">{t("prefs.default")}</button>
+          <span>{t("prefs.larger")}</span>
+        </div>
+      </div>
+    </SettingsPanel>
   );
 }

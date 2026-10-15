@@ -1,200 +1,147 @@
 "use client";
-import React, { useEffect, useState } from "react";
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  getDocs,
-  limit,
-  startAfter,
-  updateDoc,
-  doc,
-  type QueryDocumentSnapshot,
-  type DocumentData,
-  Timestamp,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Clock, CheckCircle, XCircle, Eye } from "lucide-react";
-import type { User } from "@nablis/shared/firebase";
+import { useRouter } from "next/navigation";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { Search, Mail, CalendarDays, ChevronDown, UserCheck, MapPin } from "lucide-react";
+import { db, useAuth, type User } from "@/lib/firebase";
+import { useToast } from "@/components/ui/Toast";
+import { MemberAvatar, cityOf, decideRegistration, requestedAgo } from "../_components/shared";
+import { useTranslation } from "@nablis/i18n";
 
-const PAGE_SIZE = 12;
+const PAGE = 6;
 
-function timeAgo(ts: Timestamp | null | undefined): string {
-  if (!ts) return "—";
-  try {
-    const diff = Date.now() - ts.toDate().getTime();
-    const mins  = Math.floor(diff / 60000);
-    const hours = Math.floor(mins / 60);
-    const days  = Math.floor(hours / 24);
-    if (days > 0)  return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
-    if (mins > 0)  return `${mins}m ago`;
-    return "Just now";
-  } catch { return "—"; }
-}
-
-function isPriority(ts: Timestamp | null | undefined): boolean {
-  if (!ts) return false;
-  try {
-    const diff = Date.now() - ts.toDate().getTime();
-    return diff > 3 * 24 * 60 * 60 * 1000; // > 3 days
-  } catch { return false; }
+// Requests waiting more than three days are flagged.
+function isPriority(m: User) {
+  const t = m.createdAt?.toMillis?.();
+  return !!t && Date.now() - t > 3 * 24 * 60 * 60 * 1000;
 }
 
 export default function NewMembersPage() {
-  const [members, setMembers]     = useState<User[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [cursor, setCursor]       = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [hasMore, setHasMore]     = useState(false);
-  const [acting, setActing]       = useState<Record<string, boolean>>({});
+  const { t } = useTranslation();
+  const router = useRouter();
+  const toast = useToast();
+  const { role } = useAuth();
+  const isStaff = role === "admin" || role === "super_admin";
+  const canDecide = role === "super_admin";
+  const [pending, setPending] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [shown, setShown] = useState(PAGE);
+  const [busy, setBusy] = useState<string | null>(null);
 
-  async function fetchPage(after?: QueryDocumentSnapshot<DocumentData>) {
-    setLoading(true);
-    try {
-      const constraints: Parameters<typeof query>[1][] = [
-        where("status", "==", "pending"),
-        orderBy("createdAt", "asc"),
-        limit(PAGE_SIZE + 1),
-      ];
-      if (after) constraints.push(startAfter(after));
-
-      const snap = await getDocs(query(collection(db, "users"), ...constraints));
-      const docs = snap.docs;
-      const page = docs.slice(0, PAGE_SIZE).map((d) => ({ id: d.id, ...d.data() } as User));
-
-      if (after) {
-        setMembers((prev) => [...prev, ...page]);
-      } else {
-        setMembers(page);
-      }
-      setHasMore(docs.length > PAGE_SIZE);
-      setCursor(docs[PAGE_SIZE - 1] ?? null);
-    } finally {
+  useEffect(() => {
+    if (!isStaff) return;
+    return onSnapshot(query(collection(db, "users"), where("status", "==", "pending")), (snap) => {
+      setPending(snap.docs.map((d) => ({ id: d.id, ...d.data() } as User)));
       setLoading(false);
+    }, () => setLoading(false));
+  }, [isStaff]);
+
+  const list = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return pending
+      .filter((m) => !q || `${m.displayName} ${m.email} ${cityOf(m)}`.toLowerCase().includes(q))
+      // Oldest first, so nobody waits too long.
+      .sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
+  }, [pending, search]);
+
+  async function decide(m: User, status: "active" | "rejected") {
+    if (status === "rejected" && !confirm(`Reject ${m.displayName || m.email}'s registration?`)) return;
+    setBusy(m.id);
+    try {
+      await decideRegistration(m, status);
+      toast({
+        message: status === "active" ? t("members.approved") : t("members.rejected"),
+        type: status === "active" ? "success" : "error",
+        actionLabel: t("groups.undo"),
+        onAction: () => decideRegistration(m, "pending").catch(() => {}),
+        linkLabel: t("members.viewProfile"),
+        onLink: () => router.push(`/settings/members/${m.id}`),
+      });
+    } catch {
+      toast({ message: t("members.decideError"), type: "error" });
+    } finally {
+      setBusy(null);
     }
   }
 
-  useEffect(() => { fetchPage(); }, []); // eslint-disable-line
-
-  async function handleAction(userId: string, approve: boolean) {
-    setActing((p) => ({ ...p, [userId]: true }));
-    try {
-      await updateDoc(doc(db, "users", userId), {
-        status: approve ? "active" : "rejected",
-      });
-      setMembers((p) => p.filter((m) => m.id !== userId));
-    } finally {
-      setActing((p) => ({ ...p, [userId]: false }));
-    }
+  if (!isStaff) {
+    return <div className="bg-white rounded-3xl p-12 text-center text-sm text-[#6B7280]">{t("members.onlyStaffReview")}</div>;
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-[#1B2E6B]">New Members</h1>
-          <p className="text-[#9CA3AF] text-sm mt-0.5">Review and approve pending member requests</p>
+    <div className="bg-white rounded-3xl shadow-sm p-6 sm:p-10 animate-fade-up">
+      <h2 className="font-display text-3xl font-bold text-[#111827]">{t("members.newTitle")}</h2>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mt-6">
+        <p className="flex items-center gap-3 text-lg font-semibold text-[#111827]">
+          Pending requests <span className="px-2.5 py-0.5 rounded-full bg-[#F3F4F6] text-xs font-medium text-[#374151]">{pending.length} users</span>
+        </p>
+        <div className="relative md:w-72">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
+          <input value={search} onChange={(e) => { setSearch(e.target.value); setShown(PAGE); }} placeholder={t("common.search")}
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#E5E7EB] text-sm focus:outline-none focus:border-[#1E3A8A] focus:ring-2 focus:ring-[#1E3A8A]/15" />
         </div>
-        {members.length > 0 && (
-          <span className="bg-red-100 text-red-600 text-xs font-bold px-2.5 py-1 rounded-full">
-            {members.length} pending
-          </span>
-        )}
       </div>
+      {!canDecide && pending.length > 0 && (
+        <p className="mt-4 text-xs text-[#B45309] bg-[#FFFBEB] rounded-xl px-4 py-2.5">{t("members.onlyFatherDecides")}</p>
+      )}
 
-      {loading && members.length === 0 ? (
-        <div className="py-16 text-center">
-          <div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" />
-        </div>
-      ) : members.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm py-16 text-center text-[#9CA3AF]">
-          <p className="text-4xl mb-2">✅</p>
-          <p className="text-sm font-medium">All caught up!</p>
-          <p className="text-xs mt-1">No pending member requests.</p>
+      {loading ? (
+        <div className="py-16"><div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" /></div>
+      ) : list.length === 0 ? (
+        <div className="mt-8 py-14 rounded-2xl border-2 border-dashed border-[#E5E7EB] text-center">
+          <UserCheck size={34} className="mx-auto text-[#1E3A8A]/30" />
+          <p className="text-[#374151] font-medium mt-3">{search ? t("members.noRequestsMatch") : t("members.caughtUp")}</p>
+          {!search && <p className="text-sm text-[#9CA3AF] mt-1">{t("members.caughtUpHint")}</p>}
         </div>
       ) : (
         <>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {members.map((m) => {
-              const priority = isPriority(m.createdAt);
-              const initials = (m.displayName || m.email)[0].toUpperCase();
+          <div className="grid md:grid-cols-2 gap-6 mt-8 stagger">
+            {list.slice(0, shown).map((m) => {
+              const priority = isPriority(m);
               return (
-                <div
-                  key={m.id}
-                  className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-5 flex flex-col"
-                >
-                  {/* Header badges */}
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-50 text-yellow-700 uppercase tracking-wide">
-                      Pending
-                    </span>
-                    {priority && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-600 uppercase tracking-wide">
-                        Priority
-                      </span>
+                <div key={m.id} className={`rounded-2xl border overflow-hidden flex flex-col hover:shadow-lg transition-shadow ${priority ? "border-[#FED7AA]" : "border-[#E5E7EB]"}`}>
+                  <div className="p-6 flex-1">
+                    <div className="flex items-start justify-between">
+                      <span className="rounded-2xl overflow-hidden"><MemberAvatar m={m} size={72} /></span>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <span className="px-3 py-1 rounded-full bg-[#FEF3C7] text-[#B45309] text-xs font-bold tracking-wider">{t("members.pendingBadge")}</span>
+                        {priority && <span className="px-2 py-0.5 rounded-md bg-[#FFEDD5] text-[#C2410C] text-[10px] font-bold tracking-wider">{t("members.priority")}</span>}
+                      </div>
+                    </div>
+                    <p className="text-lg font-semibold text-[#111827] mt-4">{m.displayName || "Unnamed"}</p>
+                    <p className="text-sm text-[#1E3A8A]">{t("members.newMember")}{m.christianName ? ` · ${m.christianName}` : ""}</p>
+                    <div className="mt-4 space-y-2 text-sm text-[#4B5563]">
+                      <p className="flex items-center gap-2 truncate"><Mail size={15} className="text-[#9CA3AF] flex-shrink-0" /> {m.email}</p>
+                      {cityOf(m) && <p className="flex items-center gap-2"><MapPin size={15} className="text-[#9CA3AF] flex-shrink-0" /> {[cityOf(m), m.countryOfResidence].filter(Boolean).join(", ")}</p>}
+                      <p className="flex items-center gap-2"><CalendarDays size={15} className="text-[#9CA3AF] flex-shrink-0" /> {requestedAgo(m.createdAt)}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2.5 px-6 py-4 bg-[#F9FAFB] border-t border-[#F3F4F6]">
+                    {canDecide && (
+                      <button onClick={() => decide(m, "active")} disabled={busy === m.id}
+                        className="flex-1 py-2.5 rounded-lg bg-[#1E3A8A] text-white text-sm font-semibold hover:bg-[#1B2E6B] shadow-[0_8px_18px_-10px_rgba(30,58,138,0.9)] disabled:opacity-60">
+                        {t("members.approve")}
+                      </button>
                     )}
-                  </div>
-
-                  {/* Avatar + info */}
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-12 h-12 rounded-2xl bg-[#EEF1F8] flex items-center justify-center flex-shrink-0">
-                      {m.photoURL ? (
-                        <img src={m.photoURL} alt={m.displayName} className="w-12 h-12 rounded-2xl object-cover" />
-                      ) : (
-                        <span className="text-[#1B2E6B] font-bold text-lg">{initials}</span>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[#1B2E6B] font-semibold text-sm truncate">{m.displayName || "Unknown"}</p>
-                      <p className="text-[#9CA3AF] text-xs capitalize">{m.role}</p>
-                      <p className="text-[#9CA3AF] text-xs truncate">{m.email}</p>
-                    </div>
-                  </div>
-
-                  {/* Requested time */}
-                  <div className="flex items-center gap-1.5 text-[#9CA3AF] text-xs mb-4">
-                    <Clock size={12} />
-                    <span>Requested {timeAgo(m.createdAt)}</span>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-2 mt-auto">
-                    <button
-                      onClick={() => handleAction(m.id, true)}
-                      disabled={acting[m.id]}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-50 text-green-700 text-xs font-semibold hover:bg-green-100 transition-colors disabled:opacity-50"
-                    >
-                      <CheckCircle size={13} /> Approve
-                    </button>
-                    <Link
-                      href={`/settings/members/${m.id}`}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-[#EEF1F8] text-[#1B2E6B] text-xs font-semibold hover:bg-[#dde3f0] transition-colors"
-                    >
-                      <Eye size={13} /> View
-                    </Link>
-                    <button
-                      onClick={() => handleAction(m.id, false)}
-                      disabled={acting[m.id]}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 text-red-600 text-xs font-semibold hover:bg-red-100 transition-colors disabled:opacity-50"
-                    >
-                      <XCircle size={13} /> Reject
-                    </button>
+                    <Link href={`/settings/members/${m.id}`} className="flex-1 py-2.5 rounded-lg bg-[#E5E9F2] text-[#1F2937] text-sm font-semibold text-center hover:bg-[#D8DFEE]">{t("common.view")}</Link>
+                    {canDecide && (
+                      <button onClick={() => decide(m, "rejected")} disabled={busy === m.id}
+                        className="flex-1 py-2.5 rounded-lg border border-[#E5E7EB] bg-white text-[#6B7280] text-sm font-semibold hover:text-[#DC2626] hover:border-[#FCA5A5] disabled:opacity-60">
+                        {t("members.reject")}
+                      </button>
+                    )}
                   </div>
                 </div>
               );
             })}
           </div>
-
-          {hasMore && (
-            <div className="text-center">
-              <button
-                onClick={() => cursor && fetchPage(cursor)}
-                disabled={loading}
-                className="px-6 py-2.5 rounded-xl border border-[#E5E7EB] text-sm font-semibold text-[#374151] hover:bg-[#EEF1F8] transition-colors disabled:opacity-50"
-              >
-                {loading ? "Loading…" : "Load More"}
+          {list.length > shown && (
+            <div className="flex justify-center mt-8">
+              <button onClick={() => setShown((n) => n + PAGE)}
+                className="flex items-center gap-2 px-7 py-3 rounded-xl border border-[#E5E7EB] text-[#1F2937] font-semibold hover:bg-[#F9FAFB]">
+                {t("members.loadMore")} <ChevronDown size={17} />
               </button>
             </div>
           )}

@@ -1,8 +1,10 @@
 import React from "react";
 import Link from "next/link";
-import { Calendar, BookOpen, ArrowRight, Phone, Mail, Download } from "lucide-react";
+import { Calendar, BookOpen, ArrowRight, Phone, Mail } from "lucide-react";
 import { ServiceCard } from "@/components/public/ServiceCard";
-import { BlogCard, BlogCardData } from "@/components/public/BlogCard";
+import type { BlogCardData } from "@/components/public/BlogCard";
+import { AppStoreButtons, LatestPosts } from "@/components/public/HomeClientSections";
+import { Reveal } from "@/components/public/Reveal";
 
 const SERVICES = [
   {
@@ -89,7 +91,7 @@ export default function HomePage() {
         {/* Background pattern */}
         <div className="absolute inset-0 opacity-10">
           <div
-            className="absolute inset-0"
+            className="absolute inset-0 animate-drift"
             style={{
               backgroundImage:
                 "radial-gradient(circle at 20% 50%, #F5C518 0%, transparent 50%), radial-gradient(circle at 80% 20%, #ffffff 0%, transparent 40%)",
@@ -103,7 +105,7 @@ export default function HomePage() {
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 lg:py-32 grid lg:grid-cols-2 gap-16 items-center">
           {/* Text */}
-          <div>
+          <div className="stagger">
             <div className="inline-flex items-center gap-2 bg-white/10 text-white/80 text-xs font-medium px-3 py-1.5 rounded-full mb-6">
               <span className="w-1.5 h-1.5 rounded-full bg-[#F5C518] animate-pulse" />
               Ethiopian Orthodox Ministry · Dubai
@@ -147,8 +149,8 @@ export default function HomePage() {
           </div>
 
           {/* Hero card */}
-          <div className="hidden lg:block">
-            <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-3xl p-8">
+          <div className="hidden lg:block animate-scale-in [animation-delay:250ms]">
+            <div className="animate-float bg-white/10 backdrop-blur-sm border border-white/20 rounded-3xl p-8 shadow-[0_30px_60px_-30px_rgba(0,0,0,0.5)]">
               <div className="flex items-center gap-4 mb-6">
                 <img src="/Logo-White.png" alt="Nablis" className="h-12 w-auto flex-shrink-0" />
                 <div>
@@ -166,7 +168,7 @@ export default function HomePage() {
                 ].map(({ icon, text }) => (
                   <div
                     key={text}
-                    className="flex items-center gap-3 bg-white/5 rounded-xl px-4 py-3"
+                    className="flex items-center gap-3 bg-white/5 rounded-xl px-4 py-3 transition-all duration-300 hover:bg-white/10 hover:translate-x-1"
                   >
                     <span className="text-lg">{icon}</span>
                     <span className="text-white/80 text-sm">{text}</span>
@@ -185,7 +187,7 @@ export default function HomePage() {
       {/* Spiritual Father */}
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-14 items-center">
+          <Reveal className="grid lg:grid-cols-2 gap-14 items-center">
             {/* Photo placeholder */}
             <div className="relative">
               <div className="aspect-[4/5] rounded-3xl overflow-hidden bg-gradient-to-br from-[#1B2E6B] to-[#2a4499] flex items-center justify-center max-w-sm mx-auto lg:mx-0">
@@ -225,7 +227,7 @@ export default function HomePage() {
                   { label: "Specialization", value: "Counseling" },
                   { label: "Language", value: "Amharic · Arabic · English" },
                 ].map(({ label, value }) => (
-                  <div key={label} className="bg-[#EEF1F8] rounded-xl p-4">
+                  <div key={label} className="bg-[#EEF1F8] rounded-xl p-4 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:bg-white border border-transparent hover:border-[#E5E7EB]">
                     <p className="text-[#9CA3AF] text-xs mb-1">{label}</p>
                     <p className="text-[#1B2E6B] font-semibold text-sm">{value}</p>
                   </div>
@@ -239,14 +241,14 @@ export default function HomePage() {
                 <ArrowRight size={16} />
               </Link>
             </div>
-          </div>
+          </Reveal>
         </div>
       </section>
 
       {/* Services Preview */}
       <section className="py-20 bg-[#EEF1F8]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
+          <Reveal className="text-center mb-12">
             <p className="text-[#F5C518] font-semibold text-sm uppercase tracking-widest mb-2">
               Our Services
             </p>
@@ -257,10 +259,12 @@ export default function HomePage() {
               From private confession to community Bible study, we offer a range of spiritual
               services to support your journey of faith.
             </p>
-          </div>
+          </Reveal>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {SERVICES.map((s) => (
-              <ServiceCard key={s.title} {...s} />
+            {SERVICES.map((s, i) => (
+              <Reveal key={s.title} delay={i * 90} className="h-full">
+                <ServiceCard {...s} />
+              </Reveal>
             ))}
           </div>
           <div className="text-center mt-10">
@@ -278,7 +282,7 @@ export default function HomePage() {
       {/* Featured Blogs */}
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10">
+          <Reveal className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10">
             <div>
               <p className="text-[#F5C518] font-semibold text-sm uppercase tracking-widest mb-2">
                 Teachings & Reflections
@@ -292,12 +296,10 @@ export default function HomePage() {
               View all posts
               <ArrowRight size={16} />
             </Link>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {SAMPLE_BLOGS.map((post) => (
-              <BlogCard key={post.id} post={post} />
-            ))}
-          </div>
+          </Reveal>
+          <Reveal delay={120}>
+            <LatestPosts fallback={SAMPLE_BLOGS} />
+          </Reveal>
         </div>
       </section>
 
@@ -310,8 +312,8 @@ export default function HomePage() {
               "radial-gradient(circle at 80% 50%, #F5C518 0%, transparent 60%)",
           }}
         />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <img src="/Logo-White.png" alt="Nablis" className="h-16 w-auto mx-auto mb-6" />
+        <Reveal className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <img src="/Logo-White.png" alt="Nablis" className="h-16 w-auto mx-auto mb-6 animate-float" />
           <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4">
             Take Your Faith With You
           </h2>
@@ -319,24 +321,8 @@ export default function HomePage() {
             Download the Nablis app for daily prayers, teachings, event reminders, and direct
             connection to your spiritual community — wherever you are.
           </p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <a
-              href="#"
-              className="inline-flex items-center gap-2.5 bg-white text-[#1B2E6B] font-semibold px-6 py-3.5 rounded-xl hover:bg-[#F5C518] transition-colors"
-            >
-              <Download size={17} />
-              App Store
-            </a>
-            <a
-              href="#"
-              className="inline-flex items-center gap-2.5 bg-white/10 text-white font-semibold px-6 py-3.5 rounded-xl hover:bg-white/20 transition-colors border border-white/20"
-            >
-              <Download size={17} />
-              Google Play
-            </a>
-          </div>
-          <p className="text-white/30 text-xs mt-6">Coming soon · Stay tuned for the launch</p>
-        </div>
+          <AppStoreButtons />
+        </Reveal>
       </section>
 
       {/* Contact bar */}

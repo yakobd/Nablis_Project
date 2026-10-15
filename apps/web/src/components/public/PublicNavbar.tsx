@@ -16,7 +16,16 @@ const NAV_LINKS = [
 export function PublicNavbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
   const pathname = usePathname();
+
+  // Set by the app layout while a user is signed in.
+  useEffect(() => {
+    setSignedIn(document.cookie.split("; ").some((c) => c.startsWith("__nablis_session=1")));
+  }, []);
+  const account = signedIn
+    ? { href: "/dashboard", label: "My Account" }
+    : { href: "/login", label: "Sign In" };
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -59,19 +68,28 @@ export function PublicNavbar() {
                 key={href}
                 href={href}
                 className={[
-                  "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                  "relative px-4 py-2 rounded-lg text-sm font-medium transition-colors",
                   isActive(href)
                     ? "bg-[#EEF1F8] text-[#1B2E6B]"
                     : "text-[#6B7280] hover:text-[#1B2E6B] hover:bg-[#EEF1F8]",
                 ].join(" ")}
               >
                 {label}
+                {isActive(href) && (
+                  <span className="absolute left-1/2 -bottom-0.5 h-0.5 w-5 -ml-2.5 rounded-full bg-[#F5C518] animate-scale-in" />
+                )}
               </Link>
             ))}
           </nav>
 
           {/* CTA + hamburger */}
           <div className="flex items-center gap-2">
+            <Link
+              href={account.href}
+              className="hidden sm:inline-flex items-center px-4 py-2.5 rounded-xl text-sm font-semibold text-[#1B2E6B] hover:bg-[#EEF1F8] transition-colors flex-shrink-0"
+            >
+              {account.label}
+            </Link>
             <Link
               href="/contact"
               className="hidden sm:inline-flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] active:bg-[#d4a900] transition-colors flex-shrink-0"
@@ -95,11 +113,11 @@ export function PublicNavbar() {
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-40 top-16">
           <div
-            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm animate-fade-in"
             onClick={() => setMobileOpen(false)}
             aria-hidden="true"
           />
-          <div className="relative bg-white shadow-xl w-full py-4 px-4 border-b border-[#E5E7EB]">
+          <div className="relative bg-white shadow-xl w-full py-4 px-4 border-b border-[#E5E7EB] animate-scale-in">
             <nav className="flex flex-col gap-1 mb-4" aria-label="Mobile">
               {NAV_LINKS.map(({ href, label }) => (
                 <Link
@@ -116,6 +134,12 @@ export function PublicNavbar() {
                 </Link>
               ))}
             </nav>
+            <Link
+              href={account.href}
+              className="w-full flex items-center justify-center mb-2 px-4 py-3 rounded-xl text-sm font-semibold text-[#1B2E6B] border border-[#E5E7EB] hover:bg-[#EEF1F8] transition-colors"
+            >
+              {account.label}
+            </Link>
             <Link
               href="/contact"
               className="w-full flex items-center justify-center gap-2 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-3 rounded-xl hover:bg-[#e6b800] transition-colors"

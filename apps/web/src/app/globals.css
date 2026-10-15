@@ -13,10 +13,176 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  ::selection {
+    background: rgba(245, 197, 24, 0.35);
+    color: #1B2E6B;
+  }
+
+  /* Keyboard focus ring in the brand colour (mouse clicks stay clean). */
+  :focus-visible {
+    outline: 2px solid rgba(27, 46, 107, 0.55);
+    outline-offset: 2px;
+  }
+
+  /* Slim scrollbars for inner panels (inbox, lists). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #CBD3E6 transparent;
+  }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-thumb { background: #CBD3E6; border-radius: 999px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+}
+
+/* ─── Motion ──────────────────────────────────────────────────────────────────
+   Entrance animations use fill-mode "backwards" so no transform is left on the
+   element afterwards (a lingering transform would trap fixed-position modals
+   inside it). */
+
+@keyframes nablis-fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes nablis-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes nablis-scale-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes nablis-pop {
+  0%   { transform: scale(0.6); opacity: 0; }
+  70%  { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+@keyframes scanline {
+  0%, 100% { top: 4%; }
+  50%      { top: 94%; }
+}
+@keyframes nablis-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+@keyframes nablis-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(3%, -2%, 0) scale(1.06); }
 }
 
 @layer utilities {
+  .animate-float { animation: nablis-float 6s ease-in-out infinite; }
+  .animate-drift { animation: nablis-drift 18s ease-in-out infinite; }
+
   .text-balance {
     text-wrap: balance;
   }
+
+  .animate-fade-up  { animation: nablis-fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+  .animate-fade-in  { animation: nablis-fade-in 0.3s ease-out backwards; }
+  .animate-scale-in { animation: nablis-scale-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+  .animate-pop      { animation: nablis-pop 0.35s ease-out backwards; }
+
+  /* Children enter one after another. */
+  .stagger > * { animation: nablis-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+  .stagger > *:nth-child(2) { animation-delay: 60ms; }
+  .stagger > *:nth-child(3) { animation-delay: 120ms; }
+  .stagger > *:nth-child(4) { animation-delay: 180ms; }
+  .stagger > *:nth-child(5) { animation-delay: 240ms; }
+  .stagger > *:nth-child(6) { animation-delay: 300ms; }
+  .stagger > *:nth-child(n+7) { animation-delay: 340ms; }
+
+  /* App pages: the page fades in and its top-level sections follow in turn. */
+  .stagger-page { animation: nablis-fade-in 0.25s ease-out backwards; }
+  .stagger-page > * > * { animation: nablis-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+  .stagger-page > * > *:nth-child(2) { animation-delay: 50ms; }
+  .stagger-page > * > *:nth-child(3) { animation-delay: 100ms; }
+  .stagger-page > * > *:nth-child(4) { animation-delay: 150ms; }
+  .stagger-page > * > *:nth-child(5) { animation-delay: 200ms; }
+  .stagger-page > * > *:nth-child(n+6) { animation-delay: 240ms; }
+
+  /* Scroll-reveal (see components/public/Reveal.tsx). */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+  .reveal.is-visible { opacity: 1; transform: none; }
+}
+
+/* ─── Interaction polish ────────────────────────────────────────────────────── */
+
+button, a, input, select, textarea {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 180ms;
+  transition-timing-function: ease;
+}
+
+/* Tactile press feedback (skipped for elements positioned with translate-*,
+   whose transform would otherwise be overridden). */
+button:not(:disabled):not([class*="translate"]):active,
+a.inline-flex:not([class*="translate"]):active {
+  transform: scale(0.97);
+}
+
+/* Page titles: large display heading as in the design, with the subtitle
+   right below in dark text. Applies to every page's first heading. */
+.app-main h1 {
+  font-family: var(--font-display), var(--font-inter), var(--font-ethiopic), system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(2rem, 4.2vw, 3.6rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  color: #1B2E6B;
+}
+/* Smaller title used inside header cards (e.g. My Spiritual Appointments). */
+.app-main h1.page-title-sm {
+  font-size: clamp(1.5rem, 2.4vw, 2rem);
+  color: #111827;
+  letter-spacing: -0.02em;
+}
+.app-main h1 + p {
+  color: #1F2937;
+  font-size: 1rem;
+  margin-top: 0.5rem;
+}
+
+/* Rich text written in the Bible study editor. */
+.study-content p, .study-content div { margin-bottom: 0.75em; }
+.study-content ul { list-style: disc; padding-left: 1.4em; margin-bottom: 0.75em; }
+.study-content ol { list-style: decimal; padding-left: 1.4em; margin-bottom: 0.75em; }
+.study-content a { color: #1E3A8A; text-decoration: underline; }
+.study-content img { max-width: 100%; border-radius: 12px; margin: 0.75em 0; }
+.study-content blockquote { border-left: 3px solid #F5C518; padding-left: 1em; color: #4B5563; font-style: italic; }
+
+/* Cards inside the app get a soft frame on hover. */
+.app-main .bg-white.rounded-2xl {
+  transition: box-shadow 220ms ease, border-color 220ms ease;
+}
+.app-main .bg-white.rounded-2xl:hover {
+  border-color: #D8DFEE;
+  box-shadow: 0 10px 28px -16px rgba(27, 46, 107, 0.28);
+}
+
+/* Every modal overlay fades in and its panel scales in. */
+.fixed.inset-0[class*="bg-black/"] {
+  animation: nablis-fade-in 0.2s ease-out backwards;
+}
+.fixed.inset-0[class*="bg-black/"] > .bg-white {
+  animation: nablis-scale-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* Images on cards zoom gently on hover. */
+.group:hover .group-hover-zoom {
+  transform: scale(1.04);
+}
+.group-hover-zoom {
+  transition: transform 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .reveal { opacity: 1; transform: none; }
 }

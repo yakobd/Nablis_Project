@@ -1,11 +1,22 @@
-import * as Notifications from "expo-notifications";
-import Constants from "expo-constants";
+import type * as NotificationsModule from "expo-notifications";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import { Platform } from "react-native";
-import { doc, updateDoc } from "firebase/firestore";
+import { collection, doc, getDocs, updateDoc } from "firebase/firestore";
+import {
+  activePrayers, prayerName, eventRange, DEFAULT_PRAYERS, EVENT_REMINDERS,
+  type DailyPrayer, type EventDoc, type User,
+} from "@nablis/shared/firebase";
 import { db } from './lib/firebase';
 
+// Expo Go (SDK 53+) no longer supports Android notifications, and in SDK 57
+// merely importing expo-notifications there throws. Load it only in the real
+// app (development or release build); in Expo Go every function below no-ops.
+const IN_EXPO_GO = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const Notifications: typeof NotificationsModule | null = IN_EXPO_GO ? null : require("expo-notifications");
+
 // Configure how notifications appear when the app is in the foreground
-Notifications.setNotificationHandler({
+Notifications?.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert:  true,
     shouldPlaySound:  true,
@@ -17,10 +28,7 @@ Notifications.setNotificationHandler({
 
 export async function registerForPushNotifications(userId: string): Promise<string | null> {
   // expo-notifications requires a physical device for push tokens (not simulator)
-  if (!Constants.isDevice) {
-    console.warn("Push notifications require a physical device.");
-    return null;
-  }
+  if (!Notifications || !Constants.isDevice) return null;
 
   // Check / request permission
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -31,10 +39,7 @@ export async function registerForPushNotifications(userId: string): Promise<stri
     finalStatus = status;
   }
 
-  if (finalStatus !== "granted") {
-    console.warn("Push notification permission not granted.");
-    return null;
-  }
+  if (finalStatus !== "granted") return null;
 
   // Android channel setup
   if (Platform.OS === "android") {
@@ -62,7 +67,7 @@ export async function registerForPushNotifications(userId: string): Promise<stri
     );
     const token = tokenData.data;
 
-    // Persist token to Firestore user document
+    // Persist token so /api/push can reach this device
     await updateDoc(doc(db, "users", userId), {
       expoPushToken:     token,
       pushTokenUpdatedAt: new Date().toISOString(),
@@ -70,15 +75,16 @@ export async function registerForPushNotifications(userId: string): Promise<stri
 
     return token;
   } catch (err) {
-    console.error("Failed to get push token:", err);
+    console.warn("Failed to get push token:", err);
     return null;
   }
 }
 
 export function setupNotificationListeners(
-  onNotification: (notification: Notifications.Notification) => void,
-  onResponse: (response: Notifications.NotificationResponse) => void
+  onNotification: (notification: NotificationsModule.Notification) => void,
+  onResponse: (response: NotificationsModule.NotificationResponse) => void
 ) {
+  if (!Notifications) return () => {};
   const notifSub = Notifications.addNotificationReceivedListener(onNotification);
   const respSub  = Notifications.addNotificationResponseReceivedListener(onResponse);
 
@@ -88,44 +94,90 @@ export function setupNotificationListeners(
   };
 }
 
-// Map notification data to a route string for navigation
+// Map a notification's `type` (see notify() in @nablis/shared) to an app route.
 export function notificationToRoute(data: Record<string, unknown>): string | null {
-  const type = data?.type as string | undefined;
-  switch (type) {
-    case "appointment": return "/(tabs)/appointments";
-    case "message":     return "/(tabs)/messages";
-    case "prayer":      return "/(tabs)/home";
-    case "event":       return "/events";
-    case "blog":        return "/blogs";
-    default:            return null;
+  const type = (data?.type as string | undefined) ?? "";
+  if (type.startsWith("appointment")) return "/(tabs)/appointments";
+  if (type === "message")             return "/(tabs)/messages";
+  if (type.includes("prayer"))        return "/daily-prayers";
+  if (type.includes("event"))         return "/events";
+  if (type.includes("blog"))          return "/blogs";
+  if (type.includes("bible"))         return "/bible-study";
+  if (type === "new_member" || type === "member_approved") return "/(tabs)/home";
+  if (type === "announcement")        return "/announcements";
+  if (type === "challenge") {
+    const link = data?.link as string | undefined;
+    return link?.startsWith("/challenges/") ? link : "/challenges";
   }
+  if (type.includes("testimony"))     return "/testimony";
+  return "/notifications";
 }
 
-// Schedule a local prayer reminder (called after login)
-export async function schedulePrayerReminders() {
-  // Cancel existing to avoid duplicates
-  await Notifications.cancelAllScheduledNotificationsAsync();
+/**
+ * Schedules daily local prayer reminders from the ministry's Daily Prayers
+ * settings (enabled reminders only; defaults if none are configured), skipping
+ * any the user switched off.
+ */
+export async function schedulePrayerReminders(user: User) {
+  if (!Notifications) return;
+  // Clear only our prayer reminders; event reminders stay scheduled.
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  await Promise.all(scheduled
+    .filter((n) => n.identifier.startsWith("prayer-") || n.content.data?.type === "prayer")
+    .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier)));
 
-  const reminders = [
-    { hour: 6,  minute: 0,  title: "Morning Prayer 🌅", body: "Begin your day with the Lord. Take a moment for Morning Prayer." },
-    { hour: 12, minute: 0,  title: "Afternoon Prayer ☀️", body: "Pause and connect with God. Your afternoon prayer awaits." },
-    { hour: 20, minute: 0,  title: "Evening Prayer 🌙",   body: "End your day in gratitude. Evening Prayer time is here." },
-  ];
+  const prefs = (user as unknown as { notifications?: Record<string, any> }).notifications ?? {};
+  if (prefs.features?.prayer === false) return;
 
-  for (const r of reminders) {
+  let prayers: DailyPrayer[] = [];
+  try {
+    const snap = await getDocs(collection(db, "dailyPrayers"));
+    prayers = activePrayers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DailyPrayer)));
+  } catch {
+    // Use defaults
+  }
+  if (prayers.length === 0) {
+    prayers = DEFAULT_PRAYERS.map((p) => ({ ...p, id: p.type! } as DailyPrayer));
+  }
+
+  for (const p of prayers) {
+    if (p.type && prefs.prayer?.[p.type] === false) continue;
+    if (!/^\d{1,2}:\d{2}$/.test(p.time)) continue;
+    const [hour, minute] = p.time.split(":").map(Number);
     await Notifications.scheduleNotificationAsync({
+      identifier: `prayer-${p.id}`,
       content: {
-        title: r.title,
-        body:  r.body,
-        data:  { type: "prayer" },
+        title: prayerName(p),
+        body: p.message || "It's time to pray.",
+        data: { type: "prayer" },
         sound: true,
       },
       trigger: {
-        type:    Notifications.SchedulableTriggerInputTypes.CALENDAR,
-        hour:    r.hour,
-        minute:  r.minute,
-        repeats: true,
+        type:      Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour,
+        minute,
+        channelId: "prayers",
       },
     });
   }
+}
+
+/** Local reminder before an event the member RSVP'd to (uses the event's reminder setting). */
+export async function scheduleEventReminder(event: EventDoc) {
+  if (!Notifications) return;
+  const range = eventRange(event);
+  const minutes = EVENT_REMINDERS.find((r) => r.value === (event.reminder ?? "1d"))?.minutes ?? 0;
+  if (!range || !minutes) return;
+  const at = new Date(range.start.getTime() - minutes * 60_000);
+  if (at <= new Date()) return;
+  await Notifications.scheduleNotificationAsync({
+    identifier: `event-${event.id}`,
+    content: {
+      title: `Upcoming: ${event.title}`,
+      body: `${range.start.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}${event.location ? ` · ${event.location}` : ""}`,
+      data: { type: "event" },
+      sound: true,
+    },
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at },
+  });
 }

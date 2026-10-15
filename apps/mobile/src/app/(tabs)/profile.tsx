@@ -12,20 +12,24 @@ import {
   updatePassword,
 } from "firebase/auth";
 import { auth, db } from '../../lib/firebase';
+import { uploadImage } from '../../lib/upload';
 import { useAuth } from '@nablis/shared/firebase';
+import { useTranslation } from '@nablis/i18n';
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { Avatar } from "../../components/Avatar";
 import { BottomSheet } from "../../components/BottomSheet";
 import { SidebarDrawer } from "../../components/SidebarDrawer";
+import { themedStyles, themedColors } from "../../theme";
 
-const C = {
+const L = {
   navy:   "#1B2E6B", yellow: "#F5C518", light: "#EEF1F8",
   grey:   "#9CA3AF", dark:   "#374151", border: "#E5E7EB",
   white:  "#FFFFFF", bg:     "#F9FAFB", red:    "#DC2626",
   green:  "#16A34A", inputBg: "#F9FAFB",
 };
+const C = themedColors(L);
 
 const SCREEN_H = Dimensions.get("window").height;
 
@@ -37,31 +41,6 @@ type MenuItemType = {
   color?: string;
   badge?: number;
 };
-
-/* ─── Cloudinary direct upload (unsigned preset) ────────────────────── */
-// Requires EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME and EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET
-// in apps/mobile/.env. Create an unsigned upload preset in your Cloudinary dashboard.
-async function uploadImageToCloudinary(imageUri: string): Promise<string> {
-  const cloudName   = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "";
-  const uploadPreset = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET ?? "nablis_unsigned";
-
-  const formData = new FormData();
-  formData.append("file", {
-    uri: imageUri,
-    type: "image/jpeg",
-    name: "avatar.jpg",
-  } as unknown as Blob);
-  formData.append("upload_preset", uploadPreset);
-  formData.append("folder", "nablis/avatars");
-
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-    { method: "POST", body: formData }
-  );
-  if (!res.ok) throw new Error("Upload failed");
-  const data = await res.json();
-  return data.secure_url as string;
-}
 
 /* ─── Shared sign-out ─────────────────────────────────────────────────── */
 function useSignOut() {
@@ -118,12 +97,12 @@ function LabeledInput({
   );
 }
 
-const inputStyles = StyleSheet.create({
+const inputStyles = themedStyles({
   wrap:      { marginBottom: 14 },
-  label:     { fontSize: 11, fontWeight: "700", color: C.dark, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 },
+  label:     { fontSize: 11, fontWeight: "700", color: L.dark, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 },
   row:       { position: "relative" },
-  input:     { backgroundColor: C.inputBg, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: C.dark },
-  disabled:  { color: C.grey, backgroundColor: "#F3F4F6" },
+  input:     { backgroundColor: L.inputBg, borderWidth: 1, borderColor: L.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: L.dark },
+  disabled:  { color: L.grey, backgroundColor: "#F3F4F6" },
   rightIcon: { position: "absolute", right: 14, top: 0, bottom: 0, justifyContent: "center" },
 });
 
@@ -144,7 +123,7 @@ function InlineMsg({ msg }: { msg: { type: "ok" | "err"; text: string } | null }
   );
 }
 
-const msgStyles = StyleSheet.create({
+const msgStyles = themedStyles({
   wrap: { flexDirection: "row", alignItems: "center", padding: 10, borderRadius: 10, marginBottom: 12 },
   ok:   { backgroundColor: "#F0FDF4" },
   err:  { backgroundColor: "#FEF2F2" },
@@ -177,7 +156,7 @@ function EditProfileSheet({
   /* init fields when sheet opens */
   useEffect(() => {
     if (!visible || !user) return;
-    const u = user as Record<string, unknown>;
+    const u = user as unknown as Record<string, unknown>;
     setDisplayName((u.displayName as string) ?? "");
     setChristianName((u.christianName as string) ?? "");
     setPhone(((u.phone ?? u.phoneNumber) as string) ?? "");
@@ -214,7 +193,7 @@ function EditProfileSheet({
 
       if (photoUri) {
         setUploading(true);
-        photoURL = await uploadImageToCloudinary(photoUri);
+        photoURL = await uploadImage(photoUri, "nablis/avatars");
         setUploading(false);
       }
 
@@ -323,22 +302,22 @@ function EditProfileSheet({
   );
 }
 
-const empStyles = StyleSheet.create({
-  chip:         { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: C.border, marginRight: 8, backgroundColor: C.white },
-  chipActive:   { backgroundColor: C.navy, borderColor: C.navy },
-  chipTxt:      { fontSize: 12, fontWeight: "600", color: C.dark },
-  chipTxtActive:{ color: C.white },
+const empStyles = themedStyles({
+  chip:         { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: L.border, marginRight: 8, backgroundColor: L.white },
+  chipActive:   { backgroundColor: L.navy, borderColor: L.navy },
+  chipTxt:      { fontSize: 12, fontWeight: "600", color: L.dark },
+  chipTxtActive:{ color: L.white },
 });
 
-const sheetStyles = StyleSheet.create({
-  title:        { fontSize: 17, fontWeight: "800", color: C.navy, marginBottom: 20 },
-  avatarRow:    { flexDirection: "row", alignItems: "center", marginBottom: 20, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: C.border },
-  avatarOverlay:{ ...StyleSheet.absoluteFillObject, borderRadius: 36, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center" },
-  avatarEditBtn:{ position: "absolute", bottom: 0, right: 0, width: 26, height: 26, borderRadius: 13, backgroundColor: C.navy, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: C.white },
-  avatarHint:   { fontSize: 12, color: C.grey, lineHeight: 17 },
-  avatarSelected:{ fontSize: 12, color: C.green, fontWeight: "600", marginTop: 4 },
-  saveBtn:      { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: C.navy, borderRadius: 14, paddingVertical: 14, marginTop: 6 },
-  saveBtnText:  { color: C.white, fontWeight: "700", fontSize: 15 },
+const sheetStyles = themedStyles({
+  title:        { fontSize: 17, fontWeight: "800", color: L.navy, marginBottom: 20 },
+  avatarRow:    { flexDirection: "row", alignItems: "center", marginBottom: 20, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: L.border },
+  avatarOverlay:{ ...StyleSheet.absoluteFill, borderRadius: 36, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center" },
+  avatarEditBtn:{ position: "absolute", bottom: 0, right: 0, width: 26, height: 26, borderRadius: 13, backgroundColor: L.navy, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: L.white },
+  avatarHint:   { fontSize: 12, color: L.grey, lineHeight: 17 },
+  avatarSelected:{ fontSize: 12, color: L.green, fontWeight: "600", marginTop: 4 },
+  saveBtn:      { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: L.navy, borderRadius: 14, paddingVertical: 14, marginTop: 6 },
+  saveBtnText:  { color: L.white, fontWeight: "700", fontSize: 15 },
 });
 
 /* ─── Change Password Bottom Sheet ─────────────────────────────────────── */
@@ -447,13 +426,78 @@ function ChangePasswordSheet({
   );
 }
 
+/* ─── Display & language ──────────────────────────────────────────────── */
+type Appearance = "light" | "dark" | "system";
+
+function DisplaySheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const { user } = useAuth();
+  const { t } = useTranslation();
+  const prefs = (user as { preferences?: { appearance?: string; language?: string } } | null)?.preferences ?? {};
+  const appearance: Appearance = prefs.appearance === "dark" || prefs.appearance === "system" ? prefs.appearance : "light";
+  const language = prefs.language === "am" ? "am" : "en";
+  const [saving, setSaving] = useState<string | null>(null);
+
+  // Saved to the same fields as the web portal's Preferences, so both stay in sync.
+  async function save(field: "appearance" | "language", value: string) {
+    if (!user) return;
+    setSaving(value);
+    try {
+      await updateDoc(doc(db, "users", user.id), { [`preferences.${field}`]: value, updatedAt: serverTimestamp() });
+    } catch {
+      Alert.alert(t("mobile.error"), t("mobile.notSaved"));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  const option = (selected: boolean, label: string, icon: React.ComponentProps<typeof Ionicons>["name"], onPress: () => void, busy: boolean) => (
+    <TouchableOpacity key={label} style={[displayStyles.option, selected && displayStyles.optionOn]} onPress={onPress} disabled={busy} activeOpacity={0.8}>
+      <Ionicons name={icon} size={20} color={selected ? C.navy : C.grey} />
+      <Text style={[displayStyles.optionTxt, selected && displayStyles.optionTxtOn]}>{label}</Text>
+      {busy ? <ActivityIndicator size="small" color={C.navy} /> : selected ? <Ionicons name="checkmark-circle" size={18} color={C.navy} /> : null}
+    </TouchableOpacity>
+  );
+
+  return (
+    <BottomSheet visible={visible} onClose={onClose} height={470}>
+      <Text style={sheetStyles.title}>{t("mobile.displayLanguage")}</Text>
+      <Text style={displayStyles.label}>{t("prefs.appearance")}</Text>
+      <View style={displayStyles.row}>
+        {option(appearance === "light", t("prefs.light"), "sunny-outline", () => save("appearance", "light"), saving === "light")}
+        {option(appearance === "dark", t("prefs.dark"), "moon-outline", () => save("appearance", "dark"), saving === "dark")}
+        {option(appearance === "system", t("prefs.system"), "phone-portrait-outline", () => save("appearance", "system"), saving === "system")}
+      </View>
+      <Text style={displayStyles.label}>{t("prefs.language")}</Text>
+      <View style={displayStyles.row}>
+        {option(language === "en", "English", "language-outline", () => save("language", "en"), saving === "en")}
+        {option(language === "am", "አማርኛ", "language-outline", () => save("language", "am"), saving === "am")}
+      </View>
+      <Text style={displayStyles.note}>{t("mobile.displayNote")}</Text>
+    </BottomSheet>
+  );
+}
+
+const displayStyles = themedStyles({
+  label:       { fontSize: 12, fontWeight: "700", color: L.grey, textTransform: "uppercase", letterSpacing: 0.6, marginTop: 14, marginBottom: 8 },
+  row:         { gap: 8 },
+  option:      { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 13, borderRadius: 14, borderWidth: 1, borderColor: L.border, backgroundColor: L.white },
+  optionOn:    { borderColor: L.navy, backgroundColor: L.light },
+  optionTxt:   { flex: 1, fontSize: 15, fontWeight: "600", color: L.dark },
+  optionTxtOn: { color: L.navy },
+  note:        { fontSize: 12, color: L.grey, marginTop: 14, lineHeight: 17 },
+});
+
 /* ─── Admin Profile ───────────────────────────────────────────────────── */
 function AdminProfile({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const { user }   = useAuth();
   const insets     = useSafeAreaInsets();
   const router     = useRouter();
   const signOut    = useSignOut();
+  const { t }      = useTranslation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showDisplay, setShowDisplay] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   function handleSignOut() {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -464,14 +508,18 @@ function AdminProfile({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
 
   const MENU_GROUPS: MenuItemType[][] = [
     [
-      { icon: "calendar-outline", label: "All Appointments", route: "/(tabs)/appointments" },
+      { icon: "person-outline",        label: t("mobile.editProfile"),    onPress: () => setShowEditProfile(true)    },
+      { icon: "shield-outline",        label: t("mobile.changePassword"), onPress: () => setShowChangePassword(true) },
     ],
     [
-      { icon: "notifications-outline", label: "Notifications", route: "/notifications" },
-      { icon: "contrast-outline",      label: "Appearance"    },
+      { icon: "calendar-outline", label: t("mobile.allAppointments"), route: "/(tabs)/appointments" },
     ],
     [
-      { icon: "log-out-outline", label: "Sign Out", onPress: handleSignOut, color: C.red },
+      { icon: "notifications-outline", label: t("nav.notifications"), route: "/notifications" },
+      { icon: "contrast-outline",      label: t("mobile.displayLanguage"), onPress: () => setShowDisplay(true) },
+    ],
+    [
+      { icon: "log-out-outline", label: t("mobile.signOut"), onPress: handleSignOut, color: C.red },
     ],
   ];
 
@@ -490,7 +538,7 @@ function AdminProfile({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
         <TouchableOpacity style={styles.hamburgerBtn} onPress={() => setSidebarOpen(true)}>
           <Ionicons name="menu" size={22} color={C.navy} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Profile</Text>
+        <Text style={styles.topBarTitle}>{t("settingsNav.profile")}</Text>
         <View style={{ width: 36 }} />
       </View>
       <ScrollView
@@ -532,6 +580,9 @@ function AdminProfile({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
         <Text style={styles.version}>Nablis v1.0.0 · Ethiopian Orthodox Ministry</Text>
         <View style={{ height: 32 }} />
       </ScrollView>
+      <EditProfileSheet visible={showEditProfile} onClose={() => setShowEditProfile(false)} />
+      <ChangePasswordSheet visible={showChangePassword} onClose={() => setShowChangePassword(false)} />
+      <DisplaySheet visible={showDisplay} onClose={() => setShowDisplay(false)} />
       <SidebarDrawer visible={sidebarOpen} onClose={() => setSidebarOpen(false)} currentRoute="/(tabs)/profile" />
     </View>
   );
@@ -548,7 +599,9 @@ function MemberProfile() {
   const [loading, setLoading] = useState(true);
   const [showEditProfile,    setShowEditProfile]    = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showDisplay, setShowDisplay] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!user) return;
@@ -584,15 +637,15 @@ function MemberProfile() {
 
   const MENU_GROUPS: MenuItemType[][] = [
     [
-      { icon: "person-outline",        label: "Edit Profile",    onPress: () => setShowEditProfile(true)    },
-      { icon: "shield-outline",        label: "Change Password", onPress: () => setShowChangePassword(true) },
+      { icon: "person-outline",        label: t("mobile.editProfile"),    onPress: () => setShowEditProfile(true)    },
+      { icon: "shield-outline",        label: t("mobile.changePassword"), onPress: () => setShowChangePassword(true) },
     ],
     [
-      { icon: "notifications-outline", label: "Notifications",  route: "/notifications" },
-      { icon: "contrast-outline",      label: "Appearance"      },
+      { icon: "notifications-outline", label: t("nav.notifications"),  route: "/notifications" },
+      { icon: "contrast-outline",      label: t("mobile.displayLanguage"), onPress: () => setShowDisplay(true) },
     ],
     [
-      { icon: "log-out-outline", label: "Sign Out", onPress: handleSignOut, color: C.red },
+      { icon: "log-out-outline", label: t("mobile.signOut"), onPress: handleSignOut, color: C.red },
     ],
   ];
 
@@ -602,7 +655,7 @@ function MemberProfile() {
         <TouchableOpacity style={styles.hamburgerBtn} onPress={() => setSidebarOpen(true)}>
           <Ionicons name="menu" size={22} color={C.navy} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Profile</Text>
+        <Text style={styles.topBarTitle}>{t("settingsNav.profile")}</Text>
         <View style={{ width: 36 }} />
       </View>
       <ScrollView
@@ -622,7 +675,7 @@ function MemberProfile() {
           <Text style={styles.userName}>{user?.displayName || "Member"}</Text>
           <Text style={styles.userEmail}>{user?.email}</Text>
           <View style={styles.memberBadge}>
-            <Text style={styles.memberBadgeTxt}>Community Member</Text>
+            <Text style={styles.memberBadgeTxt}>{t("mobile.communityMember")}</Text>
           </View>
         </View>
 
@@ -633,17 +686,17 @@ function MemberProfile() {
             <>
               <View style={styles.statItem}>
                 <Text style={styles.statNum}>{stats.pastVisits}</Text>
-                <Text style={styles.statLabel}>Past Visits</Text>
+                <Text style={styles.statLabel}>{t("mobile.pastVisits")}</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
                 <Text style={styles.statNum}>{stats.upcoming}</Text>
-                <Text style={styles.statLabel}>Upcoming</Text>
+                <Text style={styles.statLabel}>{t("mobile.upcoming")}</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
                 <Text style={styles.statNum}>{stats.blogPosts}</Text>
-                <Text style={styles.statLabel}>Blog Posts</Text>
+                <Text style={styles.statLabel}>{t("mobile.blogPosts")}</Text>
               </View>
             </>
           )}
@@ -687,6 +740,7 @@ function MemberProfile() {
         visible={showChangePassword}
         onClose={() => setShowChangePassword(false)}
       />
+      <DisplaySheet visible={showDisplay} onClose={() => setShowDisplay(false)} />
       <SidebarDrawer visible={sidebarOpen} onClose={() => setSidebarOpen(false)} currentRoute="/(tabs)/profile" />
     </View>
   );
@@ -700,32 +754,32 @@ export default function ProfileScreen() {
   return <MemberProfile />;
 }
 
-const styles = StyleSheet.create({
-  root:          { flex: 1, backgroundColor: C.bg },
-  topBar:        { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.bg },
-  hamburgerBtn:  { width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
-  hamburgerIcon: { fontSize: 22, color: C.navy, lineHeight: 26 },
-  topBarTitle:   { fontSize: 17, fontWeight: "800", color: C.navy },
+const styles = themedStyles({
+  root:          { flex: 1, backgroundColor: L.bg },
+  topBar:        { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: L.bg },
+  hamburgerBtn:  { width: 36, height: 36, borderRadius: 10, backgroundColor: L.white, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: L.border },
+  hamburgerIcon: { fontSize: 22, color: L.navy, lineHeight: 26 },
+  topBarTitle:   { fontSize: 17, fontWeight: "800", color: L.navy },
   content:       { paddingHorizontal: 16, paddingTop: 16 },
   profileHeader: { alignItems: "center", marginBottom: 20 },
   avatarWrap:    { position: "relative", marginBottom: 12 },
-  editAvatarBtn: { position: "absolute", bottom: 0, right: 0, width: 26, height: 26, borderRadius: 13, backgroundColor: C.navy, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: C.white },
-  userName:      { fontSize: 20, fontWeight: "800", color: C.navy, marginBottom: 3 },
-  userEmail:     { fontSize: 13, color: C.grey, marginBottom: 10 },
-  memberBadge:   { backgroundColor: C.light, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
-  memberBadgeTxt:{ fontSize: 11, fontWeight: "700", color: C.navy },
-  statsCard:     { flexDirection: "row", backgroundColor: C.white, borderRadius: 16, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: C.border, alignItems: "center" },
+  editAvatarBtn: { position: "absolute", bottom: 0, right: 0, width: 26, height: 26, borderRadius: 13, backgroundColor: L.navy, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: L.white },
+  userName:      { fontSize: 20, fontWeight: "800", color: L.navy, marginBottom: 3 },
+  userEmail:     { fontSize: 13, color: L.grey, marginBottom: 10 },
+  memberBadge:   { backgroundColor: L.light, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
+  memberBadgeTxt:{ fontSize: 11, fontWeight: "700", color: L.navy },
+  statsCard:     { flexDirection: "row", backgroundColor: L.white, borderRadius: 16, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: L.border, alignItems: "center" },
   statItem:      { flex: 1, alignItems: "center" },
-  statNum:       { fontSize: 22, fontWeight: "800", color: C.navy },
-  statLabel:     { fontSize: 10, color: C.grey, marginTop: 2 },
-  statDivider:   { width: 1, height: 32, backgroundColor: C.border },
-  menuGroup:     { backgroundColor: C.white, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: C.border, overflow: "hidden" },
+  statNum:       { fontSize: 22, fontWeight: "800", color: L.navy },
+  statLabel:     { fontSize: 10, color: L.grey, marginTop: 2 },
+  statDivider:   { width: 1, height: 32, backgroundColor: L.border },
+  menuGroup:     { backgroundColor: L.white, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: L.border, overflow: "hidden" },
   menuItem:      { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14 },
-  menuItemBorder:{ borderBottomWidth: 1, borderBottomColor: C.border },
-  menuIcon:      { width: 36, height: 36, borderRadius: 10, backgroundColor: C.light, alignItems: "center", justifyContent: "center", marginRight: 12 },
-  menuLabel:     { flex: 1, fontSize: 14, fontWeight: "600", color: C.dark },
-  badge:         { backgroundColor: C.navy, width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center", marginRight: 6 },
-  badgeTxt:      { color: C.white, fontSize: 10, fontWeight: "700" },
+  menuItemBorder:{ borderBottomWidth: 1, borderBottomColor: L.border },
+  menuIcon:      { width: 36, height: 36, borderRadius: 10, backgroundColor: L.light, alignItems: "center", justifyContent: "center", marginRight: 12 },
+  menuLabel:     { flex: 1, fontSize: 14, fontWeight: "600", color: L.dark },
+  badge:         { backgroundColor: L.navy, width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center", marginRight: 6 },
+  badgeTxt:      { color: L.white, fontSize: 10, fontWeight: "700" },
   menuChev:      { marginLeft: "auto" },
-  version:       { textAlign: "center", fontSize: 11, color: C.grey, marginTop: 8 },
+  version:       { textAlign: "center", fontSize: 11, color: L.grey, marginTop: 8 },
 });

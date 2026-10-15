@@ -1,5 +1,8 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { FadeInView } from "./FadeInView";
+import { themedStyles, themedColors } from "../theme";
+import { Ionicons } from "@expo/vector-icons";
 
 type PrayerStatus = "completed" | "upcoming" | "scheduled";
 
@@ -12,7 +15,7 @@ interface PrayerCardProps {
   loading?: boolean;
 }
 
-const C = {
+const L = {
   navy:   "#1B2E6B",
   yellow: "#F5C518",
   grey:   "#9CA3AF",
@@ -21,6 +24,7 @@ const C = {
   white:  "#FFFFFF",
   light:  "#F9FAFB",
 };
+const C = themedColors(L);
 
 const STATUS_CONFIG: Record<PrayerStatus, { label: string; bg: string; text: string }> = {
   completed: { label: "COMPLETED",  bg: "#DCFCE7", text: "#16A34A" },
@@ -34,7 +38,7 @@ export function PrayerCard({ title, time, prayerText, status, onPress, loading }
   const isScheduled = status === "scheduled";
 
   return (
-    <View style={[styles.card, isCompleted && styles.cardCompleted]}>
+    <FadeInView style={[styles.card, isCompleted && styles.cardCompleted]}>
       <View style={styles.header}>
         <View>
           <Text style={[styles.title, isScheduled && styles.titleMuted]}>{title}</Text>
@@ -62,28 +66,28 @@ export function PrayerCard({ title, time, prayerText, status, onPress, loading }
           isCompleted && styles.btnTextCompleted,
           isScheduled && styles.btnTextScheduled,
         ]}>
-          {isCompleted ? "✓ Prayed" : "Mark as Prayed"}
+          {isCompleted ? <><Ionicons name="checkmark-circle" size={14} color="#16A34A" /> Prayed</> : "Mark as Prayed"}
         </Text>
       </TouchableOpacity>
-    </View>
+    </FadeInView>
   );
 }
 
-const styles = StyleSheet.create({
-  card:           { backgroundColor: C.white, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: C.border, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
+const styles = themedStyles({
+  card:           { backgroundColor: L.white, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: L.border, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
   cardCompleted:  { backgroundColor: "#F0FDF4", borderColor: "#BBF7D0" },
   header:         { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 },
-  title:          { fontSize: 14, fontWeight: "700", color: C.navy, marginBottom: 2 },
-  titleMuted:     { color: C.grey },
-  time:           { fontSize: 11, color: C.grey },
+  title:          { fontSize: 14, fontWeight: "700", color: L.navy, marginBottom: 2 },
+  titleMuted:     { color: L.grey },
+  time:           { fontSize: 11, color: L.grey },
   badge:          { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
   badgeText:      { fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
-  prayerText:     { fontSize: 13, color: C.dark, lineHeight: 20, marginBottom: 14 },
-  textMuted:      { color: C.grey },
-  btn:            { backgroundColor: C.navy, borderRadius: 10, paddingVertical: 10, alignItems: "center" },
+  prayerText:     { fontSize: 13, color: L.dark, lineHeight: 20, marginBottom: 14 },
+  textMuted:      { color: L.grey },
+  btn:            { backgroundColor: L.navy, borderRadius: 10, paddingVertical: 10, alignItems: "center" },
   btnCompleted:   { backgroundColor: "#D1FAE5" },
-  btnScheduled:   { backgroundColor: C.light },
-  btnText:        { color: C.white, fontSize: 13, fontWeight: "700" },
+  btnScheduled:   { backgroundColor: L.light },
+  btnText:        { color: L.white, fontSize: 13, fontWeight: "700" },
   btnTextCompleted: { color: "#16A34A" },
-  btnTextScheduled: { color: C.grey },
+  btnTextScheduled: { color: L.grey },
 });

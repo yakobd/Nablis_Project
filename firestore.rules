@@ -2,130 +2,372 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
-    function isAuthenticated() {
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    function signedIn() {
       return request.auth != null;
     }
 
-    function isAdmin() {
-      return isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin'];
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function userPath(id) {
+      return /databases/$(database)/documents/users/$(id);
+    }
+
+    function profile() {
+      return get(userPath(uid())).data;
+    }
+
+    // Signed in AND approved. Pending / rejected / suspended users get nothing
+    // beyond their own records.
+    function isActive() {
+      return signedIn() && exists(userPath(uid())) && profile().status == 'active';
+    }
+
+    function isStaff() {
+      return isActive() && profile().role in ['admin', 'super_admin'];
     }
 
     function isSuperAdmin() {
-      return isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+      return isActive() && profile().role == 'super_admin';
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    function isSelf(id) {
+      return signedIn() && uid() == id;
     }
 
-    // USERS
+    // Fields that differ between the stored doc and the incoming write.
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function onlyChanges(keys) {
+      return changed().hasOnly(keys);
+    }
+
+    // ─── Users ────────────────────────────────────────────────────────────────
+    // Role and status can only be changed by the super admin. Admins may edit
+    // the profile fields of regular members. Anyone signed in may look up the
+    // super admin (used to notify them of new registrations).
+
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isOwner(userId) || isAdmin();
-      allow delete: if isSuperAdmin();
+      allow read: if isSelf(userId)
+                  || isStaff()
+                  || (signedIn() && resource.data.role == 'super_admin');
+
+      allow create: if isSelf(userId)
+                    && request.resource.data.role == 'member'
+                    && request.resource.data.status == 'pending';
+
+      allow update: if isSuperAdmin()
+                    || (isSelf(userId) && !changed().hasAny(['role', 'status']))
+                    || (isStaff() && resource.data.role == 'member'
+                                  && !changed().hasAny(['role', 'status']));
+
+      allow delete: if isSelf(userId) || isSuperAdmin();
     }
 
-    // APPOINTMENTS
-    match /appointments/{doc} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAdmin();
+    // ─── Appointments ─────────────────────────────────────────────────────────
+    // Web writes `memberId`, mobile writes both `memberId` and `userId`.
+
+    function ownsAppointment(data) {
+      return data.get('memberId', null) == uid() || data.get('userId', null) == uid();
     }
 
-    // DAILY PRAYERS
-    match /dailyPrayers/{doc} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+    match /appointments/{id} {
+      allow read: if isStaff() || (signedIn() && ownsAppointment(resource.data));
+
+      allow create: if isStaff()
+                    || (isActive()
+                        && request.resource.data.memberId == uid()
+                        && request.resource.data.status == 'pending');
+
+      // Members may reschedule (back to pending) or cancel their own booking.
+      allow update: if isStaff()
+                    || (isActive()
+                        && ownsAppointment(resource.data)
+                        && onlyChanges(['date', 'time', 'slotId', 'status', 'updatedAt'])
+                        && request.resource.data.status in ['pending', 'cancelled', 'rejected']);
+
+      allow delete: if isStaff();
     }
 
-    // PRAYER LOGS
-    match /prayerLogs/{doc} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAdmin();
+    // Booked time slots ({YYYY-MM-DD_HHMM}). A slot can't be overwritten,
+    // which prevents double booking; it is deleted when the booking is
+    // cancelled, rejected or moved.
+    match /appointmentSlots/{slot} {
+      allow read: if isActive();
+      allow create: if isActive()
+                    && (request.resource.data.memberId == uid() || isStaff());
+      allow update: if false;
+      allow delete: if isStaff() || (signedIn() && resource.data.memberId == uid());
     }
 
-    // ATTENDANCE
-    match /attendance/{doc} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+    // ─── Prayers ──────────────────────────────────────────────────────────────
+
+    match /dailyPrayers/{id} {
+      allow read: if isActive();
+      allow write: if isStaff();
     }
 
-    // CHECK INS
-    match /checkIns/{doc} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+    match /prayerLogs/{id} {
+      allow read: if isStaff() || (signedIn() && resource.data.userId == uid());
+      allow create: if isActive() && request.resource.data.userId == uid();
+      allow update: if isActive()
+                    && resource.data.userId == uid()
+                    && request.resource.data.userId == uid();
+      allow delete: if isStaff();
     }
 
-    // BLOG POSTS
-    match /blogPosts/{doc} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+    // ─── Attendance ───────────────────────────────────────────────────────────
+
+    match /attendance/{id} {
+      allow read: if isActive();
+      allow write: if isStaff();
     }
 
-    // EVENTS
-    match /events/{doc} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+    // The check-in code is staff-only; members only see it as the QR code at
+    // the meeting.
+    match /attendanceCodes/{sessionId} {
+      allow read, write: if isStaff();
     }
 
-    // GALLERY
-    match /gallery/{doc} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+    function attendancePath(sessionId) {
+      return /databases/$(database)/documents/attendance/$(sessionId);
+    }
+    function codePath(sessionId) {
+      return /databases/$(database)/documents/attendanceCodes/$(sessionId);
     }
 
-    // MESSAGES / CONVERSATIONS
-    match /conversations/{doc} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+    // One check-in per member per session: id = {sessionId}_{uid}.
+    // Members check themselves in only while the session is active and with
+    // the current code; staff check members in by scanning their pass.
+    match /checkIns/{id} {
+      allow read: if isStaff()
+                  || (signedIn() && (resource == null || resource.data.userId == uid()));
+      allow create: if (isStaff()
+                        && id == request.resource.data.sessionId + '_' + request.resource.data.userId
+                        && request.resource.data.checkedInBy == uid()
+                        && exists(attendancePath(request.resource.data.sessionId))
+                        && get(attendancePath(request.resource.data.sessionId)).data.status == 'active')
+                    || (isActive()
+                        && request.resource.data.userId == uid()
+                        && id == request.resource.data.sessionId + '_' + uid()
+                        && exists(attendancePath(request.resource.data.sessionId))
+                        && get(attendancePath(request.resource.data.sessionId)).data.status == 'active'
+                        && exists(codePath(request.resource.data.sessionId))
+                        && request.resource.data.code == get(codePath(request.resource.data.sessionId)).data.code);
+      allow update, delete: if isStaff();
     }
 
-    match /conversations/{convId}/messages/{msgId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+    // ─── Blog ─────────────────────────────────────────────────────────────────
+    // Published, non-internal posts are public (marketing site).
+
+    match /blogPosts/{postId} {
+      allow read: if isActive()
+                  || (resource.data.status == 'published' && resource.data.internal == false);
+      allow create, delete: if isStaff();
+      // Members may only add one to the view counter.
+      allow update: if isStaff()
+                    || (isActive()
+                        && onlyChanges(['views'])
+                        && request.resource.data.views == resource.data.get('views', 0) + 1);
+
+      match /comments/{commentId} {
+        allow read: if isActive();
+        allow create: if isActive() && request.resource.data.authorId == uid();
+        allow update: if isStaff();
+        allow delete: if isStaff() || (isActive() && resource.data.authorId == uid());
+      }
     }
 
-    // TESTIMONIALS
-    match /testimonies/{doc} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+    // ─── Events ───────────────────────────────────────────────────────────────
+
+    match /events/{id} {
+      allow read: if isActive();
+      allow write: if isStaff();
+
+      // One RSVP per member, written only by that member.
+      match /rsvps/{memberId} {
+        allow read: if isStaff() || isSelf(memberId);
+        allow create, update: if isActive()
+                              && isSelf(memberId)
+                              && request.resource.data.userId == memberId
+                              && request.resource.data.status in ['attending', 'not_attending'];
+        allow delete: if isStaff() || isSelf(memberId);
+      }
     }
 
-    // BIBLE STUDY
-    match /bibleStudies/{doc} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+    // ─── Gallery (public) ─────────────────────────────────────────────────────
+
+    match /gallery/{id} {
+      allow read: if true;
+      allow write: if isStaff();
     }
 
-    // NOTIFICATIONS
-    match /notifications/{doc} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAdmin();
+    // ─── Messaging ────────────────────────────────────────────────────────────
+    // A conversation belongs to one member; staff can see all of them.
+
+    function conversation(convId) {
+      return get(/databases/$(database)/documents/conversations/$(convId)).data;
     }
 
-    // CHALLENGES
-    match /challenges/{doc} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+    match /conversations/{convId} {
+      allow read: if isStaff() || (signedIn() && resource.data.memberId == uid());
+      allow create: if isStaff() || (isActive() && request.resource.data.memberId == uid());
+      allow update: if isStaff()
+                    || (isActive()
+                        && resource.data.memberId == uid()
+                        && request.resource.data.memberId == uid());
+      allow delete: if isStaff();
+
+      match /messages/{msgId} {
+        allow read: if isStaff() || (signedIn() && conversation(convId).memberId == uid());
+        allow create: if request.resource.data.senderId == uid()
+                      && (isStaff() || (isActive() && conversation(convId).memberId == uid()));
+        allow update: if isStaff() || (isActive() && conversation(convId).memberId == uid());
+        allow delete: if isStaff();
+      }
     }
 
-    // CONTACT MESSAGES
-    match /messages/{doc} {
-      allow read: if isAdmin();
-      allow create: if true;
+    // ─── Testimonies ──────────────────────────────────────────────────────────
+
+    // Only the member themselves (added or removed) differs in encouragedBy.
+    function onlyTogglesSelf(field) {
+      let before = resource.data.get(field, []).toSet();
+      let after = request.resource.data.get(field, []).toSet();
+      return after.difference(before).union(before.difference(after)).hasOnly([uid()]);
+    }
+
+    // Members see published stories and their own submissions.
+    match /testimonies/{id} {
+      allow read: if isStaff()
+                  || (isActive() && (resource.data.status == 'published' || resource.data.authorId == uid()));
+      allow create: if isStaff()
+                    || (isActive()
+                        && request.resource.data.authorId == uid()
+                        && request.resource.data.status == 'pending');
+      allow update: if isStaff()
+                    || (isActive()
+                        && resource.data.status == 'published'
+                        && onlyChanges(['encouragedBy'])
+                        && onlyTogglesSelf('encouragedBy'));
+      allow delete: if isStaff() || (signedIn() && resource.data.authorId == uid() && resource.data.status == 'pending');
+    }
+
+    // ─── Bible study ──────────────────────────────────────────────────────────
+
+    match /bibleStudies/{id} {
+      allow read: if isActive();
+      allow create, delete: if isStaff();
+      // Members may only add themselves to `members`.
+      allow update: if isStaff()
+                    || (isActive()
+                        && onlyChanges(['members'])
+                        && request.resource.data.members.hasAll(resource.data.get('members', []))
+                        && request.resource.data.members
+                             .removeAll(resource.data.get('members', []))
+                             .hasOnly([uid()]));
+    }
+
+    // Each member's daily-routine ticks per study: id = {studyId}_{uid}.
+    match /studyProgress/{pid} {
+      allow read: if isStaff()
+                  || (signedIn() && (resource == null || resource.data.userId == uid()));
+      allow create, update: if isActive()
+                            && request.resource.data.userId == uid()
+                            && pid == request.resource.data.studyId + '_' + uid();
+      allow delete: if isStaff() || (signedIn() && resource.data.userId == uid());
+    }
+
+    // ─── Bible reading plan ───────────────────────────────────────────────────
+
+    match /readingPlans/{id} {
+      allow read: if isActive();
+      allow write: if isStaff();
+    }
+
+    // Each member's ticked days per plan: id = {planId}_{uid}.
+    match /readingProgress/{pid} {
+      allow read: if isStaff()
+                  || (signedIn() && (resource == null || resource.data.userId == uid()));
+      allow create, update: if isActive()
+                            && request.resource.data.userId == uid()
+                            && pid == request.resource.data.planId + '_' + uid();
+      allow delete: if isStaff() || (signedIn() && resource.data.userId == uid());
+    }
+
+    // ─── Notifications ────────────────────────────────────────────────────────
+    // Staff may notify anyone; anyone signed in may notify staff (e.g. a new
+    // registration alerting the super admin) or themselves.
+
+    function targetIsStaff(targetId) {
+      return exists(userPath(targetId))
+          && get(userPath(targetId)).data.role in ['admin', 'super_admin'];
+    }
+
+    match /notifications/{id} {
+      allow read: if signedIn() && resource.data.userId == uid();
+      // createdBy lets /api/push verify who triggered a push.
+      allow create: if signedIn()
+                    && request.resource.data.createdBy == uid()
+                    && (isStaff()
+                        || request.resource.data.userId == uid()
+                        || targetIsStaff(request.resource.data.userId));
+      allow update: if signedIn() && resource.data.userId == uid() && onlyChanges(['read']);
+      allow delete: if isStaff() || (signedIn() && resource.data.userId == uid());
+    }
+
+    // ─── Announcements ────────────────────────────────────────────────────────
+
+    match /announcements/{id} {
+      allow read: if isActive();
+      allow write: if isStaff();
+    }
+
+    // ─── Challenges ───────────────────────────────────────────────────────────
+
+    match /challenges/{id} {
+      allow read: if isActive();
+      allow write: if isStaff();
+    }
+
+    // A member's progress in one challenge: id = {challengeId}_{uid}.
+    match /challengeProgress/{pid} {
+      allow read: if isStaff()
+                  || (signedIn() && (resource == null || resource.data.userId == uid()));
+      allow create, update: if isActive()
+                            && request.resource.data.userId == uid()
+                            && pid == request.resource.data.challengeId + '_' + uid()
+                            && exists(/databases/$(database)/documents/challenges/$(request.resource.data.challengeId));
+      allow delete: if isStaff() || (signedIn() && resource.data.userId == uid());
+    }
+
+    // ─── App settings & groups (super admin) ──────────────────────────────────
+
+    // settings/general holds public contact info and links for the website.
+    // settings/verseOfDay is the Verse of the Day; any admin may change it.
+    match /settings/{id} {
+      allow read: if id == 'general' || isActive();
+      allow write: if isSuperAdmin() || (id == 'verseOfDay' && isStaff());
+    }
+
+    match /groups/{id} {
+      allow read: if isStaff();
+      allow write: if isSuperAdmin();
+    }
+
+    // ─── Public contact form ──────────────────────────────────────────────────
+
+    match /messages/{id} {
+      allow create: if request.resource.data.keys().hasOnly(
+                         ['senderName', 'senderEmail', 'senderPhone', 'serviceType',
+                          'body', 'read', 'createdAt', 'source'])
+                    && request.resource.data.body is string
+                    && request.resource.data.body.size() <= 5000;
+      allow read, update, delete: if isStaff();
     }
   }
 }

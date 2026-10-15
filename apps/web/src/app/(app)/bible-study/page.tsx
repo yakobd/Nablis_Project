@@ -1,418 +1,292 @@
 "use client";
-import React, { useEffect, useState } from "react";
-import {
-  collection, query, orderBy, getDocs, updateDoc, doc, arrayUnion, Timestamp,
-} from "firebase/firestore";
-import { db, useAuth } from "@/lib/firebase";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { collection, getDocs, onSnapshot, query, where } from "firebase/firestore";
 import {
-  Plus, BookOpen, Users, FileText, Clock, ChevronRight,
-  Bell, Calendar, CheckCircle2,
+  FileText, Bell, ClipboardList, Radio, CalendarClock, ChevronDown, BookOpen, X, FileVideo, FileAudio, Plus,
 } from "lucide-react";
+import {
+  db, useAuth, isEnrolled, studyStatus, weeklyProgress, materialLink, toIsoDate,
+  type BibleStudyDoc, type StudyProgress, type User,
+} from "@/lib/firebase";
+import { MiniCalendar, type DayMark } from "@/components/ui/MiniCalendar";
+import { PageTitle } from "@/components/PageTitle";
+import { useTranslation } from "@nablis/i18n";
+import i18n from "@nablis/i18n";
+import { dateLocale } from "@/lib/locale";
 
-interface BibleStudy {
-  id: string;
-  title: string;
-  teacherName: string;
-  memberCount: number;
-  fileCount: number;
-  startDate?: Timestamp | null;
-  status: "active" | "upcoming" | "completed";
-  imageURL?: string;
-  description?: string;
-  members?: string[];
-  materials?: string[];
-  createdAt?: Timestamp;
+const STATUS_PILL: Record<string, string> = {
+  started: "bg-[#DCFCE7] text-[#15803D]",
+  pending: "bg-[#FEF9C3] text-[#A16207]",
+  completed: "bg-[#F3F4F6] text-[#6B7280]",
+};
+const REMINDER_ICONS = [
+  { Icon: ClipboardList, cls: "bg-[#FFEDD5] text-[#EA580C]" },
+  { Icon: Radio,         cls: "bg-[#DBEAFE] text-[#1D4ED8]" },
+  { Icon: CalendarClock, cls: "bg-[#F3E8FF] text-[#9333EA]" },
+];
+
+function MaterialIcon({ url }: { url: string }) {
+  if (/\.(mp4|mov|webm)/i.test(url)) return <FileVideo size={20} />;
+  if (/\.(mp3|wav|m4a)/i.test(url)) return <FileAudio size={20} />;
+  return <FileText size={20} />;
 }
 
-function fmtDate(ts: Timestamp | null | undefined) {
-  if (!ts) return "—";
-  try { return ts.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
-  catch { return "—"; }
+function relDay(d: Date) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const that = new Date(d); that.setHours(0, 0, 0, 0);
+  const diff = Math.round((that.getTime() - today.getTime()) / 86400000);
+  const time = d.toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit" });
+  if (diff === 0) return i18n.t("study.todayAt", { time });
+  if (diff === 1) return i18n.t("study.tomorrowAt", { time });
+  return `${d.toLocaleDateString(dateLocale(), { day: "numeric", month: "short" })}, ${time}`;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    active:    "bg-green-50 text-green-700",
-    upcoming:  "bg-yellow-50 text-yellow-700",
-    completed: "bg-gray-100 text-gray-500",
-  };
-  return (
-    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold capitalize ${map[status] ?? "bg-gray-100 text-gray-600"}`}>
-      {status}
-    </span>
-  );
-}
-
-// ── Mini Calendar ─────────────────────────────────────────────────────────────
-function MiniCalendar() {
-  const today = new Date();
-  const year  = today.getFullYear();
-  const month = today.getMonth();
-  const monthName = today.toLocaleString("default", { month: "long" });
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells = Array.from({ length: firstDay + daysInMonth }, (_, i) =>
-    i < firstDay ? null : i - firstDay + 1
-  );
-  const highlightDays = [3, 10, 17, 24];
-
-  return (
-    <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-4">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-[#1B2E6B] font-bold text-sm">{monthName} {year}</p>
-        <Calendar size={14} className="text-[#9CA3AF]" />
-      </div>
-      <div className="grid grid-cols-7 gap-0.5 text-center">
-        {["S","M","T","W","T","F","S"].map((d) => (
-          <div key={d} className="text-[9px] font-bold text-[#9CA3AF] py-1">{d}</div>
-        ))}
-        {cells.map((day, i) => (
-          <div key={i} className={[
-            "py-1.5 text-[10px] rounded-lg font-medium",
-            !day ? "" : day === today.getDate()
-              ? "bg-[#1B2E6B] text-white"
-              : highlightDays.includes(day)
-                ? "bg-[#F5C518]/20 text-[#1B2E6B]"
-                : "text-[#374151] hover:bg-[#F3F4F6] cursor-pointer",
-          ].join(" ")}>
-            {day ?? ""}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Study card (book-style) ───────────────────────────────────────────────────
-function StudyCard({ study }: { study: BibleStudy }) {
-  return (
-    <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm overflow-hidden hover:shadow-md transition-shadow group flex-shrink-0 w-48">
-      <div className="h-28 bg-gradient-to-br from-[#1B2E6B] to-[#2a4499] relative">
-        {study.imageURL ? (
-          <img src={study.imageURL} alt={study.title}
-            className="w-full h-full object-cover opacity-60 group-hover:opacity-70 transition-opacity" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <BookOpen size={32} className="text-white/30" />
-          </div>
-        )}
-        <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
-          <StatusBadge status={study.status} />
-        </div>
-      </div>
-      <div className="p-3">
-        <p className="text-[#1B2E6B] font-bold text-xs line-clamp-2 mb-2">{study.title}</p>
-        <div className="flex items-center justify-between text-[9px] text-[#9CA3AF]">
-          <span className="flex items-center gap-1"><Users size={9} /> {study.memberCount}</span>
-          <span className="flex items-center gap-1"><FileText size={9} /> {study.fileCount} files</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Admin view ────────────────────────────────────────────────────────────────
-function AdminBibleStudy({ studies, loading }: { studies: BibleStudy[]; loading: boolean }) {
-  const reminders = [
-    { label: "Tuesday Bible Class",  time: "7:00 PM",  participants: 24 },
-    { label: "Friday Youth Study",   time: "5:00 PM",  participants: 12 },
-    { label: "Sunday Morning Study", time: "8:00 AM",  participants: 36 },
-  ];
-
-  return (
-    <div className="grid lg:grid-cols-3 gap-5">
-      <div className="lg:col-span-2 space-y-5">
-        {/* Bible Studies row */}
-        <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-[#1B2E6B] font-semibold text-sm">Bible Studies</h2>
-            <Link href="/bible-study/create"
-              className="flex items-center gap-1.5 bg-[#EEF1F8] text-[#1B2E6B] font-semibold text-xs px-3 py-1.5 rounded-lg hover:bg-[#dde3f0] transition-colors">
-              <Plus size={12} /> New Study
-            </Link>
-          </div>
-          {loading ? (
-            <div className="py-10 text-center">
-              <div className="w-6 h-6 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" />
-            </div>
-          ) : studies.length === 0 ? (
-            <div className="py-10 text-center text-[#9CA3AF]">
-              <BookOpen size={28} className="mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No bible studies yet.</p>
-            </div>
-          ) : (
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {studies.map((s) => <StudyCard key={s.id} study={s} />)}
-            </div>
-          )}
-        </div>
-
-        {/* Current Lessons table */}
-        <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#F3F4F6] flex items-center justify-between">
-            <h2 className="text-[#1B2E6B] font-semibold text-sm">Current Lessons</h2>
-            <span className="text-[#9CA3AF] text-xs">{studies.filter((s) => s.status === "active").length} active</span>
-          </div>
-          {loading ? (
-            <div className="py-10 text-center">
-              <div className="w-6 h-6 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" />
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-[#F9FAFB] border-b border-[#F3F4F6]">
-                    {["Class", "Teacher", "Members", "Starting Date", "Materials", "Status"].map((h) => (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-[#9CA3AF]">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#F3F4F6]">
-                  {studies.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-[#9CA3AF] text-sm">
-                        No lessons yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    studies.map((s) => (
-                      <tr key={s.id} className="hover:bg-[#F9FAFB]">
-                        <td className="px-4 py-3">
-                          <p className="text-[#374151] font-medium text-xs line-clamp-1">{s.title}</p>
-                        </td>
-                        <td className="px-4 py-3 text-[#6B7280] text-xs">{s.teacherName}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
-                            <Users size={11} className="text-[#9CA3AF]" />
-                            <span className="text-[#374151] text-xs font-medium">{s.memberCount}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-[#6B7280] text-xs">
-                          <div className="flex items-center gap-1">
-                            <Clock size={10} className="text-[#9CA3AF]" />
-                            {fmtDate(s.startDate)}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1 text-[#9CA3AF]">
-                            <FileText size={11} />
-                            <span className="text-xs">{s.fileCount}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3"><StatusBadge status={s.status} /></td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Right sidebar */}
-      <div className="space-y-4">
-        <MiniCalendar />
-
-        {/* Reminders */}
-        <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Bell size={14} className="text-[#1B2E6B]" />
-            <h3 className="text-[#1B2E6B] font-semibold text-sm">This Week</h3>
-          </div>
-          <div className="space-y-2">
-            {reminders.map((r) => (
-              <div key={r.label} className="flex items-center justify-between py-2 border-b border-[#F3F4F6] last:border-0">
-                <div>
-                  <p className="text-[#374151] font-medium text-xs">{r.label}</p>
-                  <p className="text-[#9CA3AF] text-[10px] flex items-center gap-1 mt-0.5">
-                    <Clock size={9} /> {r.time} · {r.participants} members
-                  </p>
-                </div>
-                <ChevronRight size={14} className="text-[#9CA3AF]" />
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Create CTA */}
-        <div className="bg-[#1B2E6B] rounded-2xl p-5 text-center">
-          <BookOpen size={28} className="text-[#F5C518] mx-auto mb-2" />
-          <p className="text-white font-bold text-sm mb-1">Create New Study</p>
-          <p className="text-white/60 text-xs mb-4">Start a new bible study session for your community</p>
-          <Link href="/bible-study/create"
-            className="block w-full bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm py-2 rounded-xl hover:bg-[#e6b800] transition-colors">
-            Get Started
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Member view ───────────────────────────────────────────────────────────────
-function MemberBibleStudy({ studies, loading }: { studies: BibleStudy[]; loading: boolean }) {
-  const { user } = useAuth();
-
-  const myStudies = studies.filter((s) =>
-    s.members?.includes(user?.id ?? "") || s.status === "active"
-  );
-  const progress = Math.min(100, Math.round((myStudies.filter((s) => s.status === "completed").length / Math.max(myStudies.length, 1)) * 100));
-
-  return (
-    <div className="space-y-5">
-      {/* Welcome + progress */}
-      <div className="bg-[#1B2E6B] rounded-2xl p-6 flex items-center justify-between">
-        <div>
-          <p className="text-white/70 text-xs mb-1">Welcome back,</p>
-          <p className="text-white font-bold text-lg">{user?.displayName || user?.email}</p>
-          <p className="text-white/60 text-xs mt-2">{myStudies.length} studies enrolled</p>
-        </div>
-        <div className="text-right">
-          <p className="text-[#F5C518] text-3xl font-bold">{progress}%</p>
-          <p className="text-white/60 text-xs">Completion</p>
-          <div className="w-32 h-2 bg-white/20 rounded-full mt-2 overflow-hidden">
-            <div className="h-full bg-[#F5C518] rounded-full transition-all duration-700" style={{ width: `${progress}%` }} />
-          </div>
-        </div>
-      </div>
-
-      {/* My studies */}
-      <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-5">
-        <h2 className="text-[#1B2E6B] font-semibold text-sm mb-4">My Bible Studies</h2>
-        {loading ? (
-          <div className="py-10 text-center">
-            <div className="w-6 h-6 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" />
-          </div>
-        ) : myStudies.length === 0 ? (
-          <div className="py-10 text-center text-[#9CA3AF]">
-            <BookOpen size={28} className="mx-auto mb-2 opacity-30" />
-            <p className="text-sm">You&apos;re not enrolled in any bible studies yet.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {myStudies.map((s) => (
-              <div key={s.id} className="flex items-center gap-4 p-3 rounded-xl border border-[#F3F4F6] hover:bg-[#F9FAFB] transition-colors">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1B2E6B] to-[#2a4499] flex items-center justify-center flex-shrink-0">
-                  <BookOpen size={18} className="text-white/60" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[#374151] font-semibold text-sm line-clamp-1">{s.title}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="text-[#9CA3AF] text-[10px]">Teacher: {s.teacherName}</span>
-                    <span className="text-[#9CA3AF] text-[10px] flex items-center gap-1"><Clock size={9} /> {fmtDate(s.startDate)}</span>
-                  </div>
-                </div>
-                <StatusBadge status={s.status} />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Upcoming schedule sidebar */}
-      <div className="grid sm:grid-cols-2 gap-4">
-        <MiniCalendar />
-        <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-4">
-          <h3 className="text-[#1B2E6B] font-semibold text-sm mb-3 flex items-center gap-2">
-            <CheckCircle2 size={14} /> Quick Actions
-          </h3>
-          <div className="space-y-2">
-            {myStudies.length > 0 && (
-              <button
-                onClick={() => {
-                  const s = myStudies[0];
-                  if (s.materials && s.materials.length > 0) {
-                    alert(`Materials for "${s.title}":\n${s.materials.map((m: any) => typeof m === 'string' ? m : m.title || m.url).join('\n')}`);
-                  } else {
-                    alert('No materials available for your current studies.');
-                  }
-                }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] font-medium hover:bg-[#EEF1F8] transition-colors">
-                <FileText size={14} className="text-[#1B2E6B]" /> View Materials
-              </button>
-            )}
-            {studies.filter((s) => !s.members?.includes(user?.id ?? '') && s.status !== 'completed').length > 0 && (
-              <button
-                onClick={async () => {
-                  const available = studies.find((s) => !s.members?.includes(user?.id ?? '') && s.status !== 'completed');
-                  if (!available || !user) return;
-                  try {
-                    await updateDoc(doc(db, 'bibleStudies', available.id), {
-                      members: arrayUnion(user.id),
-                    });
-                    alert(`Joined "${available.title}" successfully!`);
-                  } catch {
-                    alert('Failed to join study. Please try again.');
-                  }
-                }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] font-medium hover:bg-[#EEF1F8] transition-colors">
-                <Users size={14} className="text-[#1B2E6B]" /> Join Next Session
-              </button>
-            )}
-            <button
-              onClick={() => alert(`Your study completion: ${progress}%\n${myStudies.filter(s => s.status === 'completed').length} of ${myStudies.length} completed.`)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] font-medium hover:bg-[#EEF1F8] transition-colors">
-              <Bell size={14} className="text-[#1B2E6B]" /> View Progress
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Page ─────────────────────────────────────────────────────────────────────
 export default function BibleStudyPage() {
+  const { t } = useTranslation();
+  const router = useRouter();
   const { user, role } = useAuth();
-  const isAdminOrSuperAdmin = role === "admin" || role === "super_admin";
-  const [studies, setStudies] = useState<BibleStudy[]>([]);
-  const [loading, setLoading] = useState(true);
+  const isStaff = role === "admin" || role === "super_admin";
+  const [studies, setStudies]   = useState<BibleStudyDoc[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [progress, setProgress] = useState<Record<string, StudyProgress>>({});
+  const [photos, setPhotos]     = useState<Record<string, Pick<User, "displayName" | "photoURL">>>({});
+  const [showAll, setShowAll]   = useState(false);
+  const [progressOpen, setProgressOpen] = useState(false);
+
+  useEffect(() => onSnapshot(collection(db, "bibleStudies"), (snap) => {
+    setStudies(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BibleStudyDoc))
+      .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0)));
+    setLoading(false);
+  }, () => setLoading(false)), []);
 
   useEffect(() => {
-    getDocs(query(collection(db, "bibleStudies"), orderBy("createdAt", "desc")))
-      .then((snap) => setStudies(snap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id:          d.id,
-          title:       data.title ?? "",
-          teacherName: data.teacherName ?? "",
-          memberCount: data.members?.length ?? 0,
-          fileCount:   data.materials?.length ?? 0,
-          startDate:   data.startDate ?? null,
-          status:      data.status ?? "upcoming",
-          imageURL:    data.imageURL ?? "",
-          description: data.description ?? "",
-          members:     data.members ?? [],
-          materials:   data.materials ?? [],
-          createdAt:   data.createdAt,
-        } as BibleStudy;
-      })))
-      .finally(() => setLoading(false));
-  }, []);
+    if (!user || isStaff) return;
+    return onSnapshot(query(collection(db, "studyProgress"), where("userId", "==", user.id)), (snap) => {
+      setProgress(Object.fromEntries(snap.docs.map((d) => [d.data().studyId as string, d.data() as StudyProgress])));
+    });
+  }, [user, isStaff]);
+
+  // Staff can see members' photos for the avatar stacks.
+  useEffect(() => {
+    if (!isStaff) return;
+    getDocs(query(collection(db, "users"), where("status", "==", "active"))).then((snap) => {
+      setPhotos(Object.fromEntries(snap.docs.map((d) => [d.id, { displayName: d.data().displayName, photoURL: d.data().photoURL ?? null }])));
+    });
+  }, [isStaff]);
+
+  const mine = useMemo(() => (user ? studies.filter((s) => isEnrolled(s, user)) : []), [studies, user]);
+  const relevant = isStaff ? studies : mine;
+  const weekly = weeklyProgress(mine, progress);
+  const firstName = user?.displayName?.split(" ")[0] ?? "friend";
+
+  const sessions = useMemo(() => relevant.flatMap((s) => [
+    ...(s.sessions ?? []).map((x) => ({ study: s, title: x.title, date: x.date?.toDate?.() })),
+    ...(s.startDate ? [{ study: s, title: `${s.title} begins`, date: s.startDate.toDate() }] : []),
+  ]).filter((x): x is { study: BibleStudyDoc; title: string; date: Date } => !!x.date), [relevant]);
+  const reminders = sessions.filter((x) => x.date.getTime() > Date.now() - 3600_000).sort((a, b) => a.date.getTime() - b.date.getTime()).slice(0, 4);
+  const marks: Record<string, DayMark> = Object.fromEntries(sessions.map((x) => [toIsoDate(x.date), "confirmed" as DayMark]));
+
+  const cards = (showAll ? studies : studies.slice(0, 3));
+  const lessons = studies.filter((s) => studyStatus(s) !== "completed");
 
   if (!user) return null;
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-7">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-[#1B2E6B]">Bible Study</h1>
-          <p className="text-[#9CA3AF] text-sm mt-0.5">Deepen your understanding of scripture</p>
+          <PageTitle id="bibleStudy" />
         </div>
-        {isAdminOrSuperAdmin && (
-          <Link href="/bible-study/create"
-            className="flex items-center gap-1.5 bg-[#F5C518] text-[#1B2E6B] font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-[#e6b800] transition-colors">
-            <Plus size={15} /> Create Study
-          </Link>
-        )}
+        <Link href="/bible-study/reading-plan"
+          className="group self-start lg:self-auto flex items-center gap-3 pl-3 pr-5 py-2.5 rounded-full bg-white shadow-sm hover:shadow-md transition-shadow">
+          <span className="w-9 h-9 rounded-full bg-[#F5C518] text-[#1B2E6B] flex items-center justify-center"><BookOpen size={17} /></span>
+          <span>
+            <span className="block text-sm font-semibold text-[#111827]">{t("study.readingPlan")}</span>
+            <span className="block text-[11px] text-[#6B7280]">{isStaff ? t("study.readingPlanStaff") : t("study.readingPlanMember")}</span>
+          </span>
+        </Link>
       </div>
 
-      {isAdminOrSuperAdmin
-        ? <AdminBibleStudy studies={studies} loading={loading} />
-        : <MemberBibleStudy studies={studies} loading={loading} />}
+      <div className="grid xl:grid-cols-[1fr_290px] gap-7 items-start">
+        <div className="space-y-8 min-w-0">
+          {/* Welcome */}
+          <div className="bg-[#F8FAFC] rounded-3xl shadow-sm px-8 py-7 flex items-center gap-6">
+            <div className="flex-1">
+              <p className="font-display text-3xl font-extrabold text-[#111827]">{t("study.welcome", { name: firstName })}</p>
+              <p className="text-[#4B5563] mt-3 max-w-md leading-relaxed">
+                {isStaff
+                  ? t("study.staffSummary", { count: lessons.length, students: new Set(studies.flatMap((s) => s.members ?? [])).size })
+                  : weekly.total
+                    ? `${t("study.weeklyDone", { pct: weekly.pct })} ${weekly.pct >= 75 ? t("study.keepItUp") : t("study.youCan")}`
+                    : mine.length ? t("study.noRoutine") : t("study.joinPrompt")}
+              </p>
+              <button onClick={() => setProgressOpen(true)}
+                className="mt-5 px-6 py-3 rounded-xl bg-[#111827] text-white font-semibold shadow-[0_10px_24px_-12px_rgba(17,24,39,0.9)] hover:bg-[#1F2937]">
+                {t("study.viewProgress")}
+              </button>
+            </div>
+            <div className="hidden sm:flex flex-col items-center justify-center w-28 h-28 rounded-full relative flex-shrink-0">
+              <svg viewBox="0 0 100 100" className="absolute inset-0 -rotate-90">
+                <circle cx="50" cy="50" r="42" fill="none" stroke="#E5E7EB" strokeWidth="9" />
+                <circle cx="50" cy="50" r="42" fill="none" stroke="#1E3A8A" strokeWidth="9" strokeLinecap="round"
+                  strokeDasharray={2 * Math.PI * 42} strokeDashoffset={2 * Math.PI * 42 * (1 - (isStaff ? 1 : weekly.pct / 100))} className="transition-all duration-1000" />
+              </svg>
+              {isStaff ? <BookOpen size={30} className="text-[#1E3A8A]" /> : <span className="text-2xl font-bold text-[#1E3A8A]">{weekly.pct}%</span>}
+            </div>
+          </div>
+
+          {/* Study cards */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-semibold text-[#111827]">{t("study.studies")}</h2>
+              {studies.length > 3 && <button onClick={() => setShowAll((v) => !v)} className="text-lg text-[#1E3A8A] font-medium hover:underline">{showAll ? t("blogsPage.showLess") : t("study.seeAll")}</button>}
+            </div>
+            {loading ? (
+              <div className="py-12"><div className="w-7 h-7 border-2 border-[#1B2E6B] border-t-transparent rounded-full animate-spin mx-auto" /></div>
+            ) : studies.length === 0 ? (
+              <div className="bg-white rounded-2xl p-10 text-center text-[#9CA3AF]">{t("study.noStudies")}</div>
+            ) : (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger">
+                {cards.map((s) => {
+                  const ids = s.members ?? [];
+                  return (
+                    <Link key={s.id} href={`/bible-study/${s.id}`}
+                      className="relative h-48 rounded-3xl overflow-hidden shadow-md group hover:-translate-y-1 hover:shadow-xl transition-all duration-300">
+                      {s.imageURL
+                        ? <img src={s.imageURL} alt="" className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                        : <div className="absolute inset-0 bg-gradient-to-br from-[#1B2E6B] to-[#7C3AED]" />}
+                      <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/10 to-black/55" />
+                      <p className="absolute top-5 left-5 right-5 text-white text-xl font-semibold leading-tight line-clamp-2">{s.title}</p>
+                      {user && isEnrolled(s, user) && !isStaff && <span className="absolute top-5 right-5 w-2.5 h-2.5 rounded-full bg-[#22C55E] ring-2 ring-white" title={t("study.enrolled")} />}
+                      <div className="absolute bottom-4 left-5 right-5 flex items-center justify-between">
+                        <div className="flex -space-x-2">
+                          {ids.slice(0, 3).map((sid) => (
+                            photos[sid]?.photoURL
+                              ? <img key={sid} src={photos[sid].photoURL!} alt="" className="w-8 h-8 rounded-full object-cover ring-2 ring-white" />
+                              : <span key={sid} className="w-8 h-8 rounded-full bg-[#EEF1F8] ring-2 ring-white text-[11px] font-bold text-[#1B2E6B] flex items-center justify-center">{(photos[sid]?.displayName || "•")[0]}</span>
+                          ))}
+                          {ids.length > 3 && <span className="w-8 h-8 rounded-full bg-white ring-2 ring-white text-[10px] font-bold text-[#111827] flex items-center justify-center">+{ids.length - 3}</span>}
+                        </div>
+                        <span className="flex items-center gap-1 text-white text-sm"><FileText size={13} /> {(s.materials ?? []).length} Files</span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Current lessons */}
+          <div className="bg-white rounded-3xl shadow-sm px-7 py-6">
+            <h2 className="text-xl font-semibold text-[#111827] mb-4">{t("study.currentLessons")}</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[15px]">
+                <thead>
+                  <tr className="border-b border-[#F3F4F6] text-left text-sm text-[#6B7280]">
+                    <th className="py-3 pl-8 font-medium">{t("study.class")}</th><th className="py-3 font-medium">{t("study.teacherName")}</th><th className="py-3 font-medium text-center">{t("nav.members")}</th>
+                    <th className="py-3 font-medium">{t("study.startDate")}</th><th className="py-3 font-medium text-center">{t("study.material")}</th><th className="py-3 font-medium">{t("study.status")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lessons.map((s) => {
+                    const st = studyStatus(s);
+                    const first = s.materials?.[0] ? materialLink(s.materials[0]) : null;
+                    return (
+                      <tr key={s.id} onClick={() => router.push(`/bible-study/${s.id}`)} className="border-b border-[#F3F4F6] last:border-0 cursor-pointer hover:bg-[#F9FAFB]">
+                        <td className="py-4 pl-8 pr-3 font-semibold text-[#111827] max-w-[180px]">{s.title}</td>
+                        <td className="py-4 pr-3 text-[#374151]">{s.teacherName}</td>
+                        <td className="py-4 text-center text-[#374151]">{(s.members ?? []).length}</td>
+                        <td className="py-4 pr-3 text-[#374151] whitespace-nowrap">{s.startDate ? s.startDate.toDate().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
+                        <td className="py-4 text-center text-[#9CA3AF]">
+                          {first ? <a href={first.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex hover:text-[#1B2E6B]" title={first.title}><MaterialIcon url={first.url} /></a> : "—"}
+                        </td>
+                        <td className="py-4"><span className={`px-3 py-1 rounded-full text-xs font-semibold capitalize ${STATUS_PILL[st]}`}>{t(`study.st.${st}`)}</span></td>
+                      </tr>
+                    );
+                  })}
+                  {lessons.length === 0 && <tr><td colSpan={6} className="py-8 text-center text-sm text-[#9CA3AF]">{t("study.noLessons")}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Right panel */}
+        <aside className="bg-white xl:rounded-none rounded-2xl shadow-sm p-5 space-y-6 xl:sticky xl:top-24">
+          <div className="flex items-center gap-3 rounded-2xl bg-[#FEF3C7] px-4 py-3">
+            {user.photoURL ? <img src={user.photoURL} alt="" className="w-9 h-9 rounded-full object-cover" /> : <span className="w-9 h-9 rounded-full bg-[#1B2E6B] text-white font-bold flex items-center justify-center">{(user.displayName || "U")[0]}</span>}
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-[#111827] truncate">{user.displayName || user.email}</p>
+              <p className="text-xs text-[#6B7280]">{isStaff ? t("study.teacher") : t("study.student")}</p>
+            </div>
+            <ChevronDown size={16} className="text-[#6B7280]" />
+          </div>
+
+          <MiniCalendar marks={marks} className="!shadow-none !border-[#EEF1F8]" />
+
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="font-semibold text-[#111827]">{t("study.reminders")}</p>
+              <Bell size={14} className="text-[#6B7280]" />
+            </div>
+            {reminders.length === 0 ? <p className="text-xs text-[#9CA3AF]">{t("study.nothingSoon")}</p> : (
+              <div className="space-y-3">
+                {reminders.map((r, i) => {
+                  const { Icon, cls } = REMINDER_ICONS[i % REMINDER_ICONS.length];
+                  return (
+                    <Link key={`${r.study.id}-${i}`} href={`/bible-study/${r.study.id}`} className="flex items-center gap-3 rounded-xl bg-[#F8FAFC] px-3 py-3 hover:bg-[#EEF1F8]">
+                      <span className={`w-10 h-10 rounded-xl flex items-center justify-center ${cls}`}><Icon size={18} /></span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-[#111827] truncate">{r.title}</p>
+                        <p className="text-[11px] text-[#6B7280]">{relDay(r.date)}</p>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {isStaff && (
+            <div className="rounded-3xl bg-gradient-to-br from-[#1E3A8A] to-[#1B2E6B] p-6 text-center text-white shadow-lg">
+              <p className="font-semibold">{t("study.createTitle")}</p>
+              <p className="text-xs text-white/70 mt-1.5">{t("study.createHint")}</p>
+              <Link href="/bible-study/create" className="mt-4 flex items-center justify-center gap-1.5 py-2.5 rounded-full bg-white text-[#1E3A8A] text-xs font-bold tracking-wider hover:bg-[#F5C518]">
+                <Plus size={13} /> {t("study.createButton")}
+              </Link>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      {/* Progress dialog */}
+      {progressOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setProgressOpen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6 relative" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setProgressOpen(false)} className="absolute top-4 right-4 text-[#9CA3AF]" aria-label={t("common.close")}><X size={18} /></button>
+            <p className="text-xl font-bold text-[#111827]">{isStaff ? t("study.overview") : t("study.progressWeek")}</p>
+            <div className="mt-5 space-y-4">
+              {(isStaff ? lessons : mine).map((s) => {
+                const r = s.routine?.length ?? 0;
+                const done = isStaff ? 0 : weeklyProgress([s], progress).done;
+                const pct = r ? Math.round((done / r) * 100) : 0;
+                return (
+                  <Link key={s.id} href={`/bible-study/${s.id}`} className="block">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-semibold text-[#111827]">{s.title}</span>
+                      <span className="text-[#6B7280]">{isStaff ? t("study.studentsCount", { count: (s.members ?? []).length }) : r ? `${done}/${r}` : t("study.noRoutineShort")}</span>
+                    </div>
+                    {!isStaff && r > 0 && <div className="h-2 rounded-full bg-[#EEF1F8] mt-1.5 overflow-hidden"><div className="h-full rounded-full bg-[#1E3A8A]" style={{ width: `${pct}%` }} /></div>}
+                  </Link>
+                );
+              })}
+              {(isStaff ? lessons : mine).length === 0 && <p className="text-sm text-[#9CA3AF]">{isStaff ? t("study.noActive") : t("study.notJoined")}</p>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

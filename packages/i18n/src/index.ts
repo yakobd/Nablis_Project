@@ -1,3 +1,6 @@
+// Hermes on React Native ships without Intl.PluralRules, which i18next needs for
+// "_one"/"_other" plural keys. The polyfill only installs itself when missing.
+import 'intl-pluralrules';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
@@ -20,16 +23,11 @@ export const resources = {
   am: { translation: amTranslations },
 } as const;
 
-function detectLanguage(): SupportedLanguage {
-  const lang = (globalThis as any).navigator?.language as string | undefined;
-  if (!lang) return 'en';
-  const code = lang.split('-')[0] as SupportedLanguage;
-  return SUPPORTED_LANGUAGES.includes(code) ? code : 'en';
-}
-
 if (!i18n.isInitialized) {
   i18n.use(initReactI18next).init({
-    lng: detectLanguage(),
+    // Start in English so server and client render the same; apps switch to
+    // the signed-in user's saved language (see changeLanguage).
+    lng: 'en',
     fallbackLng: 'en',
     defaultNS,
     resources,

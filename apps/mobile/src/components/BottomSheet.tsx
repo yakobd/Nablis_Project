@@ -3,6 +3,8 @@ import {
   View, Modal, TouchableOpacity, Animated, StyleSheet,
   Dimensions, KeyboardAvoidingView, Platform, ScrollView,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { themedStyles } from "../theme";
 
 interface BottomSheetProps {
   visible: boolean;
@@ -15,14 +17,15 @@ const SCREEN_H = Dimensions.get("window").height;
 
 export function BottomSheet({ visible, onClose, children, height = SCREEN_H * 0.75 }: BottomSheetProps) {
   const translateY = useRef(new Animated.Value(height)).current;
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (visible) {
       Animated.spring(translateY, {
         toValue: 0,
         useNativeDriver: true,
-        bounciness: 0,
-        speed: 20,
+        bounciness: 4,
+        speed: 16,
       }).start();
     } else {
       Animated.timing(translateY, {
@@ -41,7 +44,11 @@ export function BottomSheet({ visible, onClose, children, height = SCREEN_H * 0.
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+      <Animated.View
+        style={[styles.backdrop, { opacity: translateY.interpolate({ inputRange: [0, height], outputRange: [1, 0], extrapolate: "clamp" }) }]}
+      >
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+      </Animated.View>
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -57,7 +64,7 @@ export function BottomSheet({ visible, onClose, children, height = SCREEN_H * 0.
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.content}
+            contentContainerStyle={[styles.content, { paddingBottom: 40 + insets.bottom }]}
           >
             {children}
           </ScrollView>
@@ -67,8 +74,8 @@ export function BottomSheet({ visible, onClose, children, height = SCREEN_H * 0.
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop:     { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
+const styles = themedStyles({
+  backdrop:     { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.45)" },
   keyboardView: { flex: 1, justifyContent: "flex-end", pointerEvents: "box-none" } as any,
   sheet:        { backgroundColor: "#FFFFFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: "hidden", paddingHorizontal: 20 },
   handle:       { width: 36, height: 4, backgroundColor: "#E5E7EB", borderRadius: 2, alignSelf: "center", marginTop: 12, marginBottom: 16 },

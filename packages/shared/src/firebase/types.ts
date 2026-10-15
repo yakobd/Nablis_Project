@@ -1,4 +1,5 @@
 import type { Timestamp } from 'firebase/firestore';
+import type { ServiceType } from './appointments';
 
 // ─── Shared sub-types ─────────────────────────────────────────────────────────
 
@@ -32,6 +33,16 @@ export interface Material {
 
 // ─── Collection types ─────────────────────────────────────────────────────────
 
+/** A file attached to a member profile. */
+export interface UserDocument {
+  url: string;
+  name: string;
+  /** Bytes. */
+  size: number;
+  /** Epoch milliseconds. */
+  uploadedAt: number;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -53,9 +64,16 @@ export interface User {
   phone?: string;
   address?: string;
   birthday?: Timestamp;
+  gender?: 'male' | 'female' | null;
   city?: string;
   zipCode?: string;
-  documents?: string[];
+  /** Files the member uploaded (certificates, ID cards…). */
+  documents?: UserDocument[];
+
+  /** Updated every minute while the app is open (see usePresenceHeartbeat). */
+  lastSeen?: Timestamp;
+  /** Secret part of the member's check-in pass QR (see ensurePassCode). */
+  passCode?: string;
 
   // Employment
   employmentStatus?: 'employed' | 'self_employed' | 'student' | 'unemployed' | 'retired' | 'other';
@@ -66,10 +84,13 @@ export interface Appointment {
   userId: string;
   memberId: string;
   memberName: string;
-  serviceType: 'confession' | 'counseling' | 'marriage' | 'other';
+  serviceType: ServiceType;
   date: Timestamp;
   time: string;
-  status: 'pending' | 'confirmed' | 'rejected';
+  status: 'pending' | 'confirmed' | 'rejected' | 'cancelled';
+  slotId?: string | null;
+  /** Member requested a time outside the Father's listed slots. */
+  customTime?: boolean;
   privateNote?: string;
   notified?: boolean;
   updatedAt?: Timestamp;
@@ -78,17 +99,22 @@ export interface Appointment {
 
 export interface DailyPrayer {
   id: string;
-  type: 'morning' | 'afternoon' | 'evening';
+  /** Set on the three standard reminders; custom reminders only have a name. */
+  type?: 'morning' | 'afternoon' | 'evening';
+  name?: string;
+  /** "HH:MM", 24-hour, in each member's local time. */
   time: string;
   message: string;
   bibleVerse: string;
+  enabled?: boolean;
   createdAt: Timestamp;
 }
 
 export interface PrayerLog {
   id: string;
   userId: string;
-  prayerType: 'morning' | 'afternoon' | 'evening';
+  /** Reminder type (morning/afternoon/evening) or the custom reminder's id. */
+  prayerType: string;
   prayedAt: Timestamp;
   streak: number;
 }
@@ -98,9 +124,10 @@ export interface Attendance {
   meetingTitle: string;
   date: Timestamp;
   totalCapacity: number;
-  attendees: AttendeeEntry[];
-  qrCode: string;
   status: 'upcoming' | 'active' | 'completed';
+  createdAt?: Timestamp;
+  /** Legacy: early records stored attendees inline; new sessions use checkIns. */
+  attendees?: AttendeeEntry[];
 }
 
 export interface BlogPost {
@@ -219,5 +246,5 @@ export interface CheckIn {
   userId: string;
   userName: string;
   checkedInAt: Timestamp;
-  sessionId?: string;
+  sessionId: string;
 }

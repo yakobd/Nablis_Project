@@ -3,87 +3,85 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/firebase";
-import { User, Sliders, Bell, Building2, Users, UserPlus, Group } from "lucide-react";
+import { useTranslation } from "@nablis/i18n";
+import { UserCircle2, Settings2, Bell, Building2, Users, UserPlus, Folder } from "lucide-react";
 
 interface NavLinkDef {
   href: string;
+  /** settingsNav.* translation key */
   label: string;
-  icon: React.ReactNode;
-  adminOnly?: boolean;
+  Icon: typeof Bell;
+  superAdminOnly?: boolean;
 }
 
 const ACCOUNT_LINKS: NavLinkDef[] = [
-  { href: "/settings/profile",       label: "Profile",       icon: <User size={15} /> },
-  { href: "/settings/preferences",   label: "Preferences",   icon: <Sliders size={15} /> },
-  { href: "/settings/notifications", label: "Notifications", icon: <Bell size={15} /> },
+  { href: "/settings/profile",       label: "profile",       Icon: UserCircle2 },
+  { href: "/settings/preferences",   label: "preferences",   Icon: Settings2 },
+  { href: "/settings/notifications", label: "notifications", Icon: Bell },
 ];
 
 const WORKSPACE_LINKS: NavLinkDef[] = [
-  { href: "/settings/general",      label: "General",      icon: <Building2 size={15} />, adminOnly: true },
-  { href: "/settings/members",      label: "Members",      icon: <Users size={15} />,    adminOnly: true },
-  { href: "/settings/members/new",  label: "New Members",  icon: <UserPlus size={15} />, adminOnly: true },
-  { href: "/settings/groups",       label: "Groups",       icon: <Group size={15} />,    adminOnly: true },
+  { href: "/settings/general",     label: "general",     Icon: Building2, superAdminOnly: true },
+  { href: "/settings/members/new", label: "newMembers", Icon: UserPlus },
+  { href: "/settings/members",     label: "members",     Icon: Users },
+  { href: "/settings/groups",      label: "groups",      Icon: Folder, superAdminOnly: true },
 ];
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function NavLink({ href, label, Icon, active }: NavLinkDef & { active: boolean }) {
+  const { t } = useTranslation();
   return (
-    <p className="px-3 pt-4 pb-1.5 text-[10px] font-bold text-[#9CA3AF] uppercase tracking-widest">
-      {children}
-    </p>
-  );
-}
-
-function NavLink({ href, label, icon, active }: NavLinkDef & { active: boolean }) {
-  return (
-    <Link
-      href={href}
-      className={[
-        "flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",
-        active
-          ? "bg-[#1B2E6B] text-white"
-          : "text-[#6B7280] hover:bg-[#EEF1F8] hover:text-[#1B2E6B]",
-      ].join(" ")}
-    >
-      <span className={active ? "text-white" : "text-[#9CA3AF]"}>{icon}</span>
-      {label}
+    <Link href={href}
+      className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition-colors whitespace-nowrap ${active ? "bg-[#F3F4F6] text-[#1E3A8A] font-semibold" : "text-[#374151] hover:bg-[#F9FAFB] hover:text-[#1E3A8A]"}`}>
+      <Icon size={17} className={active ? "text-[#1E3A8A]" : "text-[#6B7280]"} />
+      {t(`settingsNav.${label}`)}
     </Link>
   );
 }
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { role } = useAuth();
-  const isAdmin = role === "super_admin";
+  const { user, role } = useAuth();
+  const isSuperAdmin = role === "super_admin";
+  const isStaff = isSuperAdmin || role === "admin";
+  const { t } = useTranslation();
 
   function isActive(href: string) {
     if (href === "/settings/members") {
-      // Exact match so /settings/members/new doesn't activate it
-      return pathname === "/settings/members";
+      // /settings/members/new has its own entry.
+      return pathname.startsWith("/settings/members") && !pathname.startsWith("/settings/members/new");
     }
     return pathname.startsWith(href);
   }
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 h-full">
-      {/* Sub-nav */}
-      <aside className="w-full md:w-52 flex-shrink-0 bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-3 md:self-start md:sticky md:top-0">
-        <SectionLabel>Your Account</SectionLabel>
-        {ACCOUNT_LINKS.map((link) => (
-          <NavLink key={link.href} {...link} active={isActive(link.href)} />
-        ))}
+    <div className="space-y-8">
+      <div>
+        <h1>{t("settingsNav.title")}</h1>
+        <p>{t("settingsNav.subtitle")}</p>
+      </div>
 
-        {isAdmin && (
-          <>
-            <SectionLabel>Workspace</SectionLabel>
-            {WORKSPACE_LINKS.map((link) => (
-              <NavLink key={link.href} {...link} active={isActive(link.href)} />
-            ))}
-          </>
-        )}
-      </aside>
+      <div className="flex flex-col lg:flex-row gap-5 items-start">
+        <aside className="w-full lg:w-72 flex-shrink-0 bg-white rounded-3xl shadow-sm overflow-hidden lg:sticky lg:top-24 lg:min-h-[560px]">
+          <div className="flex items-center gap-3 px-6 py-5 border-b-4 border-[#F3F4F6]">
+            {user?.photoURL
+              ? <img src={user.photoURL} alt="" className="w-11 h-11 rounded-full object-cover" />
+              : <span className="w-11 h-11 rounded-full bg-[#EEF1F8] text-[#1E3A8A] font-bold flex items-center justify-center">{(user?.displayName || user?.email || "?")[0].toUpperCase()}</span>}
+            <p className="font-semibold text-[#111827] truncate">{user?.displayName || user?.email}</p>
+          </div>
+          <nav className="p-4 flex lg:block gap-1 overflow-x-auto">
+            <p className="hidden lg:block px-3.5 pt-2 pb-2 text-[11px] font-semibold tracking-widest text-[#6B7280] uppercase">{t("settingsNav.yourAccount")}</p>
+            {ACCOUNT_LINKS.map((l) => <NavLink key={l.href} {...l} active={isActive(l.href)} />)}
+            {isStaff && (
+              <>
+                <p className="hidden lg:block px-3.5 pt-6 pb-2 text-[11px] font-semibold tracking-widest text-[#6B7280] uppercase">{t("settingsNav.workspace")}</p>
+                {WORKSPACE_LINKS.filter((l) => isSuperAdmin || !l.superAdminOnly).map((l) => <NavLink key={l.href} {...l} active={isActive(l.href)} />)}
+              </>
+            )}
+          </nav>
+        </aside>
 
-      {/* Content */}
-      <div className="flex-1 min-w-0">{children}</div>
+        <div className="flex-1 min-w-0 w-full">{children}</div>
+      </div>
     </div>
   );
 }

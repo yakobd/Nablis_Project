@@ -1,867 +1,368 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
-import {
-  doc,
-  updateDoc,
-  deleteDoc,
-  serverTimestamp,
-} from "firebase/firestore";
-import {
-  deleteUser,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
-  updatePassword,
-} from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { db, auth, useAuth } from "@/lib/firebase";
+import { arrayRemove, arrayUnion, deleteDoc, doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { deleteUser, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
+import { CloudUpload, Eye, EyeOff, FileText, Image as ImageIcon, Loader2, Trash2, X, AlertTriangle } from "lucide-react";
+import { db, useAuth, type UserDocument } from "@/lib/firebase";
 import { uploadToCloudinary } from "@/lib/cloudinary";
-import {
-  Camera,
-  Eye,
-  EyeOff,
-  CheckCircle,
-  AlertCircle,
-  Bell,
-  Shield,
-  Trash2,
-  Loader2,
-} from "lucide-react";
+import { useToast } from "@/components/ui/Toast";
+import { Field, INPUT, SettingsPanel } from "../_components/ui";
+import { useTranslation } from "@nablis/i18n";
+import { dateLocale } from "@/lib/locale";
 
-/* ─── primitives ─────────────────────────────────────────────────────── */
+interface Details {
+  firstName: string;
+  lastName: string;
+  christianName: string;
+  phone: string;
+  country: string;
+  city: string;
+  neighborhood: string;
+  parishChurch: string;
+  employmentStatus: string;
+}
 
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
+const EMPLOYMENT = [
+  { value: "", label: "Select…" },
+  { value: "employed", label: "Employed" },
+  { value: "self_employed", label: "Self-employed" },
+  { value: "student", label: "Student" },
+  { value: "unemployed", label: "Unemployed" },
+  { value: "retired", label: "Retired" },
+  { value: "other", label: "Other" },
+];
+
+function fromUser(user: unknown): Details {
+  const u = (user ?? {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const parts = str(u.displayName).trim().split(/\s+/);
+  return {
+    firstName: parts[0] ?? "",
+    lastName: parts.slice(1).join(" "),
+    christianName: str(u.christianName),
+    phone: str(u.phoneNumber) || str(u.phone),
+    country: str(u.countryOfResidence),
+    city: str(u.cityOfResidence),
+    neighborhood: str(u.neighborhood),
+    parishChurch: str(u.parishChurch),
+    employmentStatus: str(u.employmentStatus),
+  };
+}
+
+function fileSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function PasswordInput({ value, onChange, placeholder, autoComplete }: { value: string; onChange: (v: string) => void; placeholder: string; autoComplete: string }) {
+  const { t } = useTranslation();
+  const [show, setShow] = useState(false);
   return (
-    <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-6">
-      <div className="mb-5">
-        <h2 className="text-[#1B2E6B] font-semibold text-sm">{title}</h2>
-        {description && (
-          <p className="text-[#9CA3AF] text-xs mt-0.5">{description}</p>
-        )}
-      </div>
-      {children}
+    <div className="relative">
+      <input type={show ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder} autoComplete={autoComplete} className={INPUT + " pr-12"} />
+      <button type="button" onClick={() => setShow((s) => !s)} aria-label={show ? t("prof.hidePw") : t("prof.showPw")}
+        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#6B7280] hover:text-[#111827]">
+        {show ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
     </div>
   );
 }
-
-function Field({
-  label,
-  sublabel,
-  required,
-  children,
-}: {
-  label: string;
-  sublabel?: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold text-[#374151] mb-1.5">
-        {label}
-        {sublabel && <span className="text-[#9CA3AF] font-normal ml-1">{sublabel}</span>}
-        {required && <span className="text-red-400 ml-0.5">*</span>}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-const INPUT =
-  "w-full px-4 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1B2E6B]/20 focus:border-[#1B2E6B] transition-colors bg-white";
-
-function Toast({
-  msg,
-}: {
-  msg: { type: "ok" | "err"; text: string } | null;
-}) {
-  if (!msg) return null;
-  return (
-    <div
-      className={`flex items-center gap-2 text-sm px-3 py-2.5 rounded-xl ${
-        msg.type === "ok"
-          ? "bg-green-50 text-green-700"
-          : "bg-red-50 text-red-600"
-      }`}
-    >
-      {msg.type === "ok" ? (
-        <CheckCircle size={14} />
-      ) : (
-        <AlertCircle size={14} />
-      )}
-      {msg.text}
-    </div>
-  );
-}
-
-function Toggle({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <button
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={[
-        "relative w-10 h-5 rounded-full transition-colors flex-shrink-0",
-        checked ? "bg-[#1B2E6B]" : "bg-[#D1D5DB]",
-      ].join(" ")}
-    >
-      <span
-        className={[
-          "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform",
-          checked ? "translate-x-5" : "translate-x-0.5",
-        ].join(" ")}
-      />
-    </button>
-  );
-}
-
-function ToggleRow({
-  label,
-  description,
-  checked,
-  onChange,
-}: {
-  label: string;
-  description?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between py-3 border-b border-[#F3F4F6] last:border-0">
-      <div>
-        <p className="text-sm font-medium text-[#374151]">{label}</p>
-        {description && (
-          <p className="text-xs text-[#9CA3AF] mt-0.5">{description}</p>
-        )}
-      </div>
-      <Toggle checked={checked} onChange={onChange} />
-    </div>
-  );
-}
-
-/* ─── helpers ─────────────────────────────────────────────────────────── */
-
-function getField(user: ReturnType<typeof useAuth>["user"], ...keys: string[]) {
-  if (!user) return "";
-  for (const k of keys) {
-    const v = (user as unknown as Record<string, unknown>)[k];
-    if (v && typeof v === "string") return v;
-  }
-  return "";
-}
-
-function initials(name: string, email: string) {
-  const src = name || email || "?";
-  return src
-    .split(" ")
-    .map((w) => w[0] ?? "")
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
-
-/* ─── main page ───────────────────────────────────────────────────────── */
 
 export default function ProfilePage() {
-  const { user, firebaseUser } = useAuth();
+  const { t } = useTranslation();
+  const { user, firebaseUser, role } = useAuth();
   const router = useRouter();
+  const toast = useToast();
+  const photoInput = useRef<HTMLInputElement>(null);
+  const docInput = useRef<HTMLInputElement>(null);
 
-  /* personal info */
-  const [displayName, setDisplayName] = useState("");
-  const [christianName, setChristianName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [country, setCountry] = useState("");
-  const [city, setCity] = useState("");
-  const [neighborhood, setNeighborhood] = useState("");
-  const [parishChurch, setParishChurch] = useState("");
-  const [employmentStatus, setEmploymentStatus] = useState("");
-
-  /* photo */
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [uploadProgress, setUploadProgress] = useState<
-    "idle" | "uploading" | "done" | "error"
-  >("idle");
-
-  /* save */
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState<{
-    type: "ok" | "err";
-    text: string;
-  } | null>(null);
-
-  /* password */
+  const [saved, setSaved] = useState<Details>(() => fromUser(user));
+  const [d, setD] = useState<Details>(saved);
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
-  const [showCurrent, setShowCurrent] = useState(false);
-  const [showNew, setShowNew] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [pwSaving, setPwSaving] = useState(false);
-  const [pwMsg, setPwMsg] = useState<{
-    type: "ok" | "err";
-    text: string;
-  } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [docBusy, setDocBusy] = useState(false);
 
-  /* notifications */
-  const [notifPrayerMorning, setNotifPrayerMorning] = useState(true);
-  const [notifPrayerAfternoon, setNotifPrayerAfternoon] = useState(true);
-  const [notifPrayerEvening, setNotifPrayerEvening] = useState(true);
-  const [notifAppointments, setNotifAppointments] = useState(true);
-  const [notifBlogs, setNotifBlogs] = useState(true);
-  const [notifEvents, setNotifEvents] = useState(true);
-  const [notifSaving, setNotifSaving] = useState(false);
-  const [notifMsg, setNotifMsg] = useState<{
-    type: "ok" | "err";
-    text: string;
-  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deletePw, setDeletePw] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
-  /* danger zone */
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [deletePassword, setDeletePassword] = useState("");
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [deleteMsg, setDeleteMsg] = useState<{
-    type: "ok" | "err";
-    text: string;
-  } | null>(null);
-
-  /* init form from Firestore user */
   useEffect(() => {
     if (!user) return;
-    const u = user as unknown as Record<string, unknown>;
-    setDisplayName((u.displayName as string) ?? "");
-    setChristianName((u.christianName as string) ?? "");
-    setPhone(
-      ((u.phone ?? u.phoneNumber) as string) ?? ""
-    );
-    setCountry((u.countryOfResidence as string) ?? "");
-    setCity((u.cityOfResidence as string) ?? "");
-    setNeighborhood((u.neighborhood as string) ?? "");
-    setParishChurch((u.parishChurch as string) ?? "");
-    setEmploymentStatus((u.employmentStatus as string) ?? "");
-
-    const n = (u.notifications as Record<string, unknown>) ?? {};
-    const f = (n.features as Record<string, unknown>) ?? {};
-    const p = (n.prayer as Record<string, unknown>) ?? {};
-    setNotifPrayerMorning((p.morning as boolean) ?? true);
-    setNotifPrayerAfternoon((p.afternoon as boolean) ?? true);
-    setNotifPrayerEvening((p.evening as boolean) ?? true);
-    setNotifAppointments((f.appointments as boolean) ?? true);
-    setNotifBlogs((f.blogs as boolean) ?? true);
-    setNotifEvents((f.events as boolean) ?? true);
+    const v = fromUser(user);
+    setSaved(v);
+    setD(v);
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!user) return null;
+  const documents: UserDocument[] = Array.isArray(user.documents) ? user.documents.filter((x) => x && typeof x === "object") : [];
+  const passwordFilled = !!(currentPw || newPw || confirmPw);
+  const dirty = JSON.stringify(d) !== JSON.stringify(saved) || passwordFilled;
+  const set = (k: keyof Details) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setD((x) => ({ ...x, [k]: e.target.value }));
 
-  const avatarInitials = initials(user.displayName ?? "", user.email ?? "");
+  function cancel() {
+    setD(saved);
+    setCurrentPw(""); setNewPw(""); setConfirmPw("");
+  }
 
-  /* ── photo upload ── */
-  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
-    setUploadProgress("uploading");
+    if (file.size > 10 * 1024 * 1024) { toast({ message: t("prof.imgTooBig"), type: "error" }); return; }
+    setPhotoBusy(true);
     try {
       const url = await uploadToCloudinary(file, "nablis/avatars");
-      await updateDoc(doc(db, "users", user!.id), {
-        photoURL: url,
-        updatedAt: serverTimestamp(),
-      });
-      setUploadProgress("done");
-      setTimeout(() => setUploadProgress("idle"), 3000);
+      await updateDoc(doc(db, "users", user!.id), { photoURL: url, updatedAt: serverTimestamp() });
+      toast({ message: t("prof.picUpdated") });
     } catch {
-      setUploadProgress("error");
-      setTimeout(() => setUploadProgress("idle"), 4000);
+      toast({ message: t("prof.picError"), type: "error" });
     } finally {
-      e.target.value = "";
+      setPhotoBusy(false);
     }
   }
 
-  /* ── save personal info ── */
-  async function saveProfile() {
-    setSaving(true);
-    setSaveMsg(null);
+  async function removePhoto() {
+    setPhotoBusy(true);
     try {
+      await updateDoc(doc(db, "users", user!.id), { photoURL: null, updatedAt: serverTimestamp() });
+      toast({ message: t("prof.picRemoved") });
+    } catch {
+      toast({ message: t("prof.picRemoveError"), type: "error" });
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function onDocuments(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (!files.length) return;
+    setDocBusy(true);
+    try {
+      const added: UserDocument[] = [];
+      for (const f of files) {
+        if (f.size > 25 * 1024 * 1024) { toast({ message: `${f.name} is larger than 25 MB.`, type: "error" }); continue; }
+        const url = await uploadToCloudinary(f, "nablis/member-documents");
+        added.push({ url, name: f.name, size: f.size, uploadedAt: Date.now() });
+      }
+      if (added.length) {
+        await updateDoc(doc(db, "users", user!.id), { documents: arrayUnion(...added), updatedAt: serverTimestamp() });
+        toast({ message: t("prof.docsUploaded", { count: added.length }) });
+      }
+    } catch {
+      toast({ message: t("prof.docError"), type: "error" });
+    } finally {
+      setDocBusy(false);
+    }
+  }
+
+  async function removeDocument(item: UserDocument) {
+    if (!confirm(t("prof.removeConfirm", { name: item.name }))) return;
+    try {
+      await updateDoc(doc(db, "users", user!.id), { documents: arrayRemove(item) });
+    } catch {
+      toast({ message: t("prof.docRemoveError"), type: "error" });
+    }
+  }
+
+  async function save() {
+    const name = `${d.firstName.trim()} ${d.lastName.trim()}`.trim();
+    if (!name) { toast({ message: t("prof.needName"), type: "error" }); return; }
+    if (passwordFilled) {
+      if (!currentPw || !newPw) { toast({ message: t("prof.needPw"), type: "error" }); return; }
+      if (newPw.length < 8) { toast({ message: t("prof.pwShort"), type: "error" }); return; }
+      if (newPw !== confirmPw) { toast({ message: t("prof.pwMismatch"), type: "error" }); return; }
+    }
+    setSaving(true);
+    try {
+      if (passwordFilled && firebaseUser?.email) {
+        try {
+          await reauthenticateWithCredential(firebaseUser, EmailAuthProvider.credential(firebaseUser.email, currentPw));
+        } catch {
+          toast({ message: t("prof.pwWrong"), type: "error" });
+          return;
+        }
+        await updatePassword(firebaseUser, newPw);
+        setCurrentPw(""); setNewPw(""); setConfirmPw("");
+      }
+      const previous = saved;
       await updateDoc(doc(db, "users", user!.id), {
-        displayName: displayName.trim(),
-        christianName: christianName.trim(),
-        phone: phone.trim(),
-        phoneNumber: phone.trim(),
-        countryOfResidence: country.trim(),
-        cityOfResidence: city.trim(),
-        neighborhood: neighborhood.trim(),
-        parishChurch: parishChurch.trim(),
-        employmentStatus: employmentStatus,
+        displayName: name,
+        christianName: d.christianName.trim(),
+        phone: d.phone.trim(),
+        phoneNumber: d.phone.trim(),
+        countryOfResidence: d.country.trim(),
+        cityOfResidence: d.city.trim(),
+        neighborhood: d.neighborhood.trim(),
+        parishChurch: d.parishChurch.trim(),
+        employmentStatus: d.employmentStatus,
         updatedAt: serverTimestamp(),
       });
-      setSaveMsg({ type: "ok", text: "Profile saved successfully." });
+      setSaved(d);
+      toast({
+        message: passwordFilled ? t("prof.updatedBoth") : t("prof.updated"),
+        actionLabel: t("prof.undo"),
+        onAction: () => {
+          updateDoc(doc(db, "users", user!.id), {
+            displayName: `${previous.firstName} ${previous.lastName}`.trim(),
+            christianName: previous.christianName, phone: previous.phone, phoneNumber: previous.phone,
+            countryOfResidence: previous.country, cityOfResidence: previous.city, neighborhood: previous.neighborhood,
+            parishChurch: previous.parishChurch, employmentStatus: previous.employmentStatus,
+          }).then(() => { setSaved(previous); setD(previous); }).catch(() => {});
+        },
+        linkLabel: role === "member" ? undefined : t("msg.viewProfile"),
+        onLink: () => router.push(`/settings/members/${user!.id}`),
+      });
     } catch {
-      setSaveMsg({ type: "err", text: "Failed to save. Please try again." });
+      toast({ message: t("prof.saveError"), type: "error" });
     } finally {
       setSaving(false);
     }
   }
 
-  /* ── change password ── */
-  async function changePassword() {
-    if (!firebaseUser?.email || !currentPw || !newPw) return;
-    if (newPw !== confirmPw) {
-      setPwMsg({ type: "err", text: "New passwords do not match." });
-      return;
-    }
-    if (newPw.length < 8) {
-      setPwMsg({ type: "err", text: "Password must be at least 8 characters." });
-      return;
-    }
-    setPwSaving(true);
-    setPwMsg(null);
+  async function deleteAccount() {
+    if (!firebaseUser?.email || !deletePw) return;
+    setDeleteBusy(true);
     try {
-      const cred = EmailAuthProvider.credential(firebaseUser.email, currentPw);
-      await reauthenticateWithCredential(firebaseUser, cred);
-      await updatePassword(firebaseUser, newPw);
-      setPwMsg({ type: "ok", text: "Password updated successfully." });
-      setCurrentPw("");
-      setNewPw("");
-      setConfirmPw("");
-    } catch (err: unknown) {
-      const code = (err as { code?: string }).code ?? "";
-      if (
-        code === "auth/wrong-password" ||
-        code === "auth/invalid-credential"
-      ) {
-        setPwMsg({ type: "err", text: "Current password is incorrect." });
-      } else {
-        setPwMsg({ type: "err", text: "Failed to update password. Try again." });
-      }
-    } finally {
-      setPwSaving(false);
-    }
-  }
-
-  /* ── save notifications ── */
-  async function saveNotifications() {
-    setNotifSaving(true);
-    setNotifMsg(null);
-    try {
-      await updateDoc(doc(db, "users", user!.id), {
-        "notifications.prayer.morning": notifPrayerMorning,
-        "notifications.prayer.afternoon": notifPrayerAfternoon,
-        "notifications.prayer.evening": notifPrayerEvening,
-        "notifications.features.appointments": notifAppointments,
-        "notifications.features.blogs": notifBlogs,
-        "notifications.features.events": notifEvents,
-        updatedAt: serverTimestamp(),
-      });
-      setNotifMsg({ type: "ok", text: "Notification preferences saved." });
-    } catch {
-      setNotifMsg({ type: "err", text: "Failed to save. Please try again." });
-    } finally {
-      setNotifSaving(false);
-    }
-  }
-
-  /* ── delete account ── */
-  async function handleDeleteAccount() {
-    if (!firebaseUser?.email || !deletePassword) return;
-    setDeleteLoading(true);
-    setDeleteMsg(null);
-    try {
-      const cred = EmailAuthProvider.credential(
-        firebaseUser.email,
-        deletePassword
-      );
-      await reauthenticateWithCredential(firebaseUser, cred);
+      await reauthenticateWithCredential(firebaseUser, EmailAuthProvider.credential(firebaseUser.email, deletePw));
       await deleteDoc(doc(db, "users", user!.id));
       await deleteUser(firebaseUser);
       router.replace("/login");
-    } catch (err: unknown) {
+    } catch (err) {
       const code = (err as { code?: string }).code ?? "";
-      if (
-        code === "auth/wrong-password" ||
-        code === "auth/invalid-credential"
-      ) {
-        setDeleteMsg({ type: "err", text: "Incorrect password." });
-      } else {
-        setDeleteMsg({
-          type: "err",
-          text: "Failed to delete account. Please try again.",
-        });
-      }
-    } finally {
-      setDeleteLoading(false);
+      toast({ message: code === "auth/wrong-password" || code === "auth/invalid-credential" ? t("prof.incorrectPw") : t("prof.deleteError"), type: "error" });
+      setDeleteBusy(false);
     }
   }
 
-  /* ─── render ─────────────────────────────────────────────────────────── */
+  const initial = (user.displayName || user.email || "?")[0].toUpperCase();
 
   return (
-    <div className="space-y-5 pb-10">
-      <div>
-        <h1 className="text-xl font-bold text-[#1B2E6B]">Profile</h1>
-        <p className="text-[#9CA3AF] text-sm mt-0.5">
-          Manage your personal information and account settings
-        </p>
-      </div>
-
-      {/* ── PROFILE PHOTO ── */}
-      <Section title="Profile Photo">
-        <div className="flex items-center gap-6">
-          {/* avatar */}
-          <div className="relative flex-shrink-0">
-            <div className="w-20 h-20 rounded-2xl overflow-hidden bg-[#1B2E6B] flex items-center justify-center">
-              {user.photoURL ? (
-                <img
-                  src={user.photoURL}
-                  alt={user.displayName ?? ""}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <span className="text-[#F5C518] font-bold text-xl">
-                  {avatarInitials}
-                </span>
-              )}
-              {uploadProgress === "uploading" && (
-                <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center">
-                  <Loader2 size={20} className="text-white animate-spin" />
-                </div>
+    <div className="space-y-5">
+      <SettingsPanel title={t("settingsNav.profile")} saveLabel={t("prefs.save")} onSave={save} onCancel={cancel} saving={saving} dirty={dirty}>
+        {/* Picture */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-6 pb-8 border-b border-[#F3F4F6]">
+          <div className="relative w-28 h-28 flex-shrink-0">
+            {user.photoURL
+              ? <img src={user.photoURL} alt="" className="w-28 h-28 rounded-full object-cover ring-4 ring-[#F3F4F6]" />
+              : <span className="w-28 h-28 rounded-full bg-[#EEF1F8] text-[#1E3A8A] text-4xl font-bold flex items-center justify-center ring-4 ring-[#F3F4F6]">{initial}</span>}
+            {photoBusy && <span className="absolute inset-0 rounded-full bg-white/70 flex items-center justify-center"><Loader2 size={22} className="animate-spin text-[#1E3A8A]" /></span>}
+          </div>
+          <div>
+            <p className="text-sm font-medium text-[#111827]">{t("prof.picture")}</p>
+            <div className="flex flex-wrap gap-3 mt-3">
+              <button type="button" onClick={() => photoInput.current?.click()} disabled={photoBusy}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#111827] text-white text-sm font-medium hover:bg-black disabled:opacity-60">
+                <CloudUpload size={16} /> {t("prof.upload")}
+              </button>
+              {user.photoURL && (
+                <button type="button" onClick={removePhoto} disabled={photoBusy}
+                  className="px-5 py-2.5 rounded-xl border border-[#E5E7EB] text-sm font-medium text-[#374151] hover:bg-[#F9FAFB] disabled:opacity-60">
+                  {t("share.remove")}
+                </button>
               )}
             </div>
-          </div>
-
-          {/* upload controls */}
-          <div className="space-y-2">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="hidden"
-              onChange={handlePhotoChange}
-            />
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={uploadProgress === "uploading"}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#EEF1F8] text-[#1B2E6B] text-sm font-semibold hover:bg-[#dde3f0] transition-colors disabled:opacity-60"
-            >
-              <Camera size={14} />
-              Change Photo
-            </button>
-            <p className="text-[#9CA3AF] text-xs">JPG, PNG or WebP · max 5 MB</p>
-            {uploadProgress === "uploading" && (
-              <p className="text-xs text-[#1B2E6B] font-medium">Uploading…</p>
-            )}
-            {uploadProgress === "done" && (
-              <p className="flex items-center gap-1 text-xs text-green-600 font-medium">
-                <CheckCircle size={12} /> Photo updated
-              </p>
-            )}
-            {uploadProgress === "error" && (
-              <p className="flex items-center gap-1 text-xs text-red-500 font-medium">
-                <AlertCircle size={12} /> Upload failed — try again
-              </p>
-            )}
+            <p className="text-xs text-[#9CA3AF] mt-2.5">{t("prof.picHint")}</p>
+            <input ref={photoInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={onPhoto} />
           </div>
         </div>
-      </Section>
 
-      {/* ── PERSONAL INFORMATION ── */}
-      <Section
-        title="Personal Information"
-        description="Update your profile details"
-      >
-        <div className="grid sm:grid-cols-2 gap-4">
-          <Field label="Full Name" required>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Your full name"
-              className={INPUT}
-            />
+        {/* Details */}
+        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-6 py-8 border-b border-[#F3F4F6]">
+          <Field label={t("prof.firstName")}><input value={d.firstName} onChange={set("firstName")} autoComplete="given-name" className={INPUT} /></Field>
+          <Field label={t("prof.lastName")}><input value={d.lastName} onChange={set("lastName")} autoComplete="family-name" className={INPUT} /></Field>
+          <Field label={t("auth.email")} hint={t("prof.emailHint")}>
+            <input value={user.email} disabled className={INPUT} />
           </Field>
-
-          <Field label="Christian Name" sublabel="/ የክርስትና ስም">
-            <input
-              type="text"
-              value={christianName}
-              onChange={(e) => setChristianName(e.target.value)}
-              placeholder="e.g. Tewodros, Mariam…"
-              className={INPUT}
-            />
+          <Field label={t("prof.documents")} hint={t("prof.documentsHint")}>
+            <div className="flex items-center gap-3 rounded-xl bg-[#EEF1F8] px-3 py-2.5">
+              <button type="button" onClick={() => docInput.current?.click()} disabled={docBusy}
+                className="flex items-center gap-2 px-5 py-1.5 rounded-lg bg-white text-sm text-[#374151] shadow-sm hover:text-[#1E3A8A] disabled:opacity-60">
+                {docBusy && <Loader2 size={14} className="animate-spin" />} {t("prof.selectDoc")}
+              </button>
+              <span className="text-xs text-[#6B7280]">{t("prof.docHint")}</span>
+              <input ref={docInput} type="file" multiple accept="application/pdf,image/*" className="hidden" onChange={onDocuments} />
+            </div>
           </Field>
-
-          <Field label="Phone Number">
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+971 5X XXX XXXX"
-              className={INPUT}
-            />
-          </Field>
-
-          <Field label="Email Address">
-            <input
-              type="email"
-              value={user.email ?? ""}
-              disabled
-              className={`${INPUT} bg-[#F9FAFB] cursor-not-allowed text-[#9CA3AF]`}
-            />
-          </Field>
-
-          <Field label="Country of Residence">
-            <input
-              type="text"
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              placeholder="e.g. United Arab Emirates"
-              className={INPUT}
-            />
-          </Field>
-
-          <Field label="City of Residence">
-            <input
-              type="text"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              placeholder="e.g. Dubai"
-              className={INPUT}
-            />
-          </Field>
-
-          <Field label="Neighborhood / Subcity">
-            <input
-              type="text"
-              value={neighborhood}
-              onChange={(e) => setNeighborhood(e.target.value)}
-              placeholder="e.g. Deira, Bur Dubai…"
-              className={INPUT}
-            />
-          </Field>
-
-          <Field label="Parish Church">
-            <input
-              type="text"
-              value={parishChurch}
-              onChange={(e) => setParishChurch(e.target.value)}
-              placeholder="Your local parish"
-              className={INPUT}
-            />
-          </Field>
-
-          <Field label="Employment / Work Status">
-            <select value={employmentStatus} onChange={(e) => setEmploymentStatus(e.target.value)} className={INPUT + " bg-white"}>
-              <option value="">Select status…</option>
-              <option value="employed">Employed</option>
-              <option value="self_employed">Self Employed</option>
-              <option value="student">Student</option>
-              <option value="unemployed">Unemployed / Job Seeking</option>
-              <option value="retired">Retired</option>
-              <option value="other">Other</option>
+          {documents.length > 0 && (
+            <div className="sm:col-span-2 grid sm:grid-cols-2 lg:grid-cols-3 gap-3 stagger">
+              {documents.map((f) => {
+                const isPdf = /\.pdf$/i.test(f.name);
+                return (
+                  <div key={f.url} className="group flex items-center gap-3 rounded-xl border border-[#E5E7EB] px-3 py-2.5">
+                    <span className="w-9 h-9 rounded-lg bg-[#FEF3C7] text-[#B45309] flex items-center justify-center flex-shrink-0">
+                      {isPdf ? <FileText size={17} /> : <ImageIcon size={17} />}
+                    </span>
+                    <a href={f.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-[#111827] truncate hover:text-[#1E3A8A]">{f.name}</p>
+                      <p className="text-[11px] text-[#9CA3AF]">{fileSize(f.size)} · {new Date(f.uploadedAt).toLocaleDateString(dateLocale(), { month: "short", day: "2-digit", year: "numeric" })}</p>
+                    </a>
+                    <button type="button" onClick={() => removeDocument(f)} aria-label={`${t("share.remove")} ${f.name}`}
+                      className="p-1 text-[#9CA3AF] hover:text-[#DC2626] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity">
+                      <X size={15} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <Field label={t("prof.christianName")} hint="የክርስትና ስም"><input value={d.christianName} onChange={set("christianName")} className={INPUT} /></Field>
+          <Field label={t("prof.phone")} hint={t("prof.phoneHint")}><input value={d.phone} onChange={set("phone")} type="tel" autoComplete="tel" className={INPUT} /></Field>
+          <Field label={t("prof.country")}><input value={d.country} onChange={set("country")} autoComplete="country-name" className={INPUT} /></Field>
+          <Field label={t("prof.city")}><input value={d.city} onChange={set("city")} autoComplete="address-level2" className={INPUT} /></Field>
+          <Field label={t("prof.neighborhood")}><input value={d.neighborhood} onChange={set("neighborhood")} className={INPUT} /></Field>
+          <Field label={t("prof.parish")}><input value={d.parishChurch} onChange={set("parishChurch")} className={INPUT} /></Field>
+          <Field label={t("prof.employment")}>
+            <select value={d.employmentStatus} onChange={set("employmentStatus")} className={INPUT + " cursor-pointer"}>
+              {EMPLOYMENT.map((o) => <option key={o.value} value={o.value}>{t(`employment.${o.value || "select"}`)}</option>)}
             </select>
           </Field>
         </div>
 
-        <div className="mt-5 flex flex-col gap-3">
-          <Toast msg={saveMsg} />
-          <button
-            onClick={saveProfile}
-            disabled={saving}
-            className="self-start flex items-center gap-2 bg-[#1B2E6B] text-white font-semibold px-5 py-2.5 rounded-xl hover:bg-[#162554] transition-colors disabled:opacity-60 text-sm"
-          >
-            {saving && (
-              <Loader2 size={14} className="animate-spin" />
-            )}
-            Save Changes
-          </button>
-        </div>
-      </Section>
-
-      {/* ── ACCOUNT SECURITY ── */}
-      <Section title="Account Security" description="Change your login password">
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-2">
-            <Field label="Current Password" required>
-              <div className="relative">
-                <input
-                  type={showCurrent ? "text" : "password"}
-                  value={currentPw}
-                  onChange={(e) => setCurrentPw(e.target.value)}
-                  placeholder="••••••••"
-                  className={`${INPUT} pr-10`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowCurrent((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#374151] transition-colors"
-                >
-                  {showCurrent ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-            </Field>
+        {/* Password */}
+        <div className="pt-8">
+          <p className="text-lg text-[#111827]">{t("prof.changePw")}</p>
+          <p className="text-sm text-[#6B7280] mt-0.5">{t("prof.changePwHint")}</p>
+          <div className="grid md:grid-cols-3 gap-5 mt-6">
+            <Field label={t("prof.oldPw")}><PasswordInput value={currentPw} onChange={setCurrentPw} placeholder={t("prof.enterPw")} autoComplete="current-password" /></Field>
+            <Field label={t("prof.newPw")}><PasswordInput value={newPw} onChange={setNewPw} placeholder={t("prof.enterPw")} autoComplete="new-password" /></Field>
+            <Field label={t("prof.confirmPw")}><PasswordInput value={confirmPw} onChange={setConfirmPw} placeholder={t("prof.confirmPw")} autoComplete="new-password" /></Field>
           </div>
-
-          <Field label="New Password" required>
-            <div className="relative">
-              <input
-                type={showNew ? "text" : "password"}
-                value={newPw}
-                onChange={(e) => setNewPw(e.target.value)}
-                placeholder="Min. 8 characters"
-                className={`${INPUT} pr-10`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowNew((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#374151] transition-colors"
-              >
-                {showNew ? <EyeOff size={15} /> : <Eye size={15} />}
-              </button>
-            </div>
-          </Field>
-
-          <Field label="Confirm New Password" required>
-            <div className="relative">
-              <input
-                type={showConfirm ? "text" : "password"}
-                value={confirmPw}
-                onChange={(e) => setConfirmPw(e.target.value)}
-                placeholder="Repeat new password"
-                className={`${INPUT} pr-10`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirm((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#374151] transition-colors"
-              >
-                {showConfirm ? <EyeOff size={15} /> : <Eye size={15} />}
-              </button>
-            </div>
-          </Field>
+          {newPw && newPw.length < 8 && <p className="text-xs text-[#B45309] mt-2">{t("prof.atLeast8")}</p>}
+          {confirmPw && newPw !== confirmPw && <p className="text-xs text-[#DC2626] mt-2">{t("prof.pwMismatch")}</p>}
         </div>
+      </SettingsPanel>
 
-        {/* password strength hint */}
-        {newPw.length > 0 && (
-          <div className="mt-3 flex gap-1">
-            {[1, 2, 3, 4].map((level) => {
-              const strength =
-                (newPw.length >= 8 ? 1 : 0) +
-                (/[A-Z]/.test(newPw) ? 1 : 0) +
-                (/[0-9]/.test(newPw) ? 1 : 0) +
-                (/[^A-Za-z0-9]/.test(newPw) ? 1 : 0);
-              const active = level <= strength;
-              const color =
-                strength <= 1
-                  ? "bg-red-400"
-                  : strength === 2
-                  ? "bg-yellow-400"
-                  : strength === 3
-                  ? "bg-blue-400"
-                  : "bg-green-500";
-              return (
-                <div
-                  key={level}
-                  className={`h-1 flex-1 rounded-full transition-colors ${
-                    active ? color : "bg-[#E5E7EB]"
-                  }`}
-                />
-              );
-            })}
-            <span className="text-xs text-[#9CA3AF] ml-2 whitespace-nowrap">
-              {newPw.length < 8
-                ? "Too short"
-                : /[^A-Za-z0-9]/.test(newPw) && /[A-Z]/.test(newPw) && /[0-9]/.test(newPw)
-                ? "Strong"
-                : /[A-Z]/.test(newPw) && /[0-9]/.test(newPw)
-                ? "Good"
-                : "Fair"}
-            </span>
-          </div>
-        )}
-
-        <div className="mt-5 flex flex-col gap-3">
-          <Toast msg={pwMsg} />
-          <button
-            onClick={changePassword}
-            disabled={pwSaving || !currentPw || !newPw || !confirmPw}
-            className="self-start flex items-center gap-2 bg-[#1B2E6B] text-white font-semibold px-5 py-2.5 rounded-xl hover:bg-[#162554] transition-colors disabled:opacity-60 text-sm"
-          >
-            {pwSaving ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Shield size={14} />
-            )}
-            Update Password
-          </button>
+      {/* Danger zone */}
+      <div className="bg-white rounded-3xl shadow-sm p-6 sm:px-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <p className="font-semibold text-[#DC2626]">{t("prof.deleteAccount")}</p>
+          <p className="text-sm text-[#6B7280] mt-0.5">{t("prof.deleteHint")}</p>
         </div>
-      </Section>
-
-      {/* ── NOTIFICATION PREFERENCES ── */}
-      <Section
-        title="Notification Preferences"
-        description="Control which reminders you receive"
-      >
-        <div className="mb-3">
-          <div className="flex items-center gap-2 mb-3">
-            <Bell size={14} className="text-[#9CA3AF]" />
-            <span className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">
-              Prayer Reminders
-            </span>
-          </div>
-          <ToggleRow
-            label="Morning Prayer"
-            description="Daily reminder at the morning prayer hour"
-            checked={notifPrayerMorning}
-            onChange={setNotifPrayerMorning}
-          />
-          <ToggleRow
-            label="Midday Prayer"
-            description="Daily reminder at the afternoon prayer hour"
-            checked={notifPrayerAfternoon}
-            onChange={setNotifPrayerAfternoon}
-          />
-          <ToggleRow
-            label="Evening Prayer"
-            description="Daily reminder at the evening prayer hour"
-            checked={notifPrayerEvening}
-            onChange={setNotifPrayerEvening}
-          />
-        </div>
-
-        <div className="pt-2">
-          <div className="flex items-center gap-2 mb-3">
-            <Bell size={14} className="text-[#9CA3AF]" />
-            <span className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">
-              App Notifications
-            </span>
-          </div>
-          <ToggleRow
-            label="Appointment Reminders"
-            description="Reminders before your upcoming sessions"
-            checked={notifAppointments}
-            onChange={setNotifAppointments}
-          />
-          <ToggleRow
-            label="New Blog Posts"
-            description="When the ministry publishes new content"
-            checked={notifBlogs}
-            onChange={setNotifBlogs}
-          />
-          <ToggleRow
-            label="Event Reminders"
-            description="Upcoming church events and gatherings"
-            checked={notifEvents}
-            onChange={setNotifEvents}
-          />
-        </div>
-
-        <div className="mt-5 flex flex-col gap-3">
-          <Toast msg={notifMsg} />
-          <button
-            onClick={saveNotifications}
-            disabled={notifSaving}
-            className="self-start flex items-center gap-2 bg-[#1B2E6B] text-white font-semibold px-5 py-2.5 rounded-xl hover:bg-[#162554] transition-colors disabled:opacity-60 text-sm"
-          >
-            {notifSaving && <Loader2 size={14} className="animate-spin" />}
-            Save Preferences
-          </button>
-        </div>
-      </Section>
-
-      {/* ── DANGER ZONE ── */}
-      <div className="bg-white rounded-2xl border border-red-100 shadow-sm p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-red-600 font-semibold text-sm mb-0.5">
-              Danger Zone
-            </h2>
-            <p className="text-[#9CA3AF] text-xs">
-              Permanently delete your account and all your data. This cannot be
-              undone.
-            </p>
-          </div>
-          <button
-            onClick={() => setShowDeleteDialog(true)}
-            className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50 transition-colors"
-          >
-            <Trash2 size={14} />
-            Delete Account
-          </button>
-        </div>
+        <button type="button" onClick={() => setDeleting(true)}
+          className="flex items-center gap-2 self-start px-5 py-2.5 rounded-xl border border-[#FCA5A5] text-sm font-semibold text-[#DC2626] hover:bg-[#FEF2F2]">
+          <Trash2 size={15} /> {t("prof.deleteAccount")}
+        </button>
       </div>
 
-      {/* ── DELETE ACCOUNT DIALOG ── */}
-      {showDeleteDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
-                <Trash2 size={18} className="text-red-500" />
-              </div>
-              <div>
-                <h3 className="text-[#1B2E6B] font-bold text-sm">
-                  Delete Your Account
-                </h3>
-                <p className="text-[#9CA3AF] text-xs">
-                  This action is permanent and irreversible.
-                </p>
-              </div>
-            </div>
-
-            <p className="text-[#6B7280] text-sm mb-4">
-              All your data — appointments, prayer logs, and messages — will be
-              permanently deleted. Enter your password to confirm.
-            </p>
-
-            <Field label="Your Password" required>
-              <input
-                type="password"
-                value={deletePassword}
-                onChange={(e) => setDeletePassword(e.target.value)}
-                placeholder="••••••••"
-                className={INPUT}
-                autoFocus
-              />
-            </Field>
-
-            {deleteMsg && (
-              <div className="mt-3">
-                <Toast msg={deleteMsg} />
-              </div>
-            )}
-
-            <div className="flex gap-3 mt-5">
-              <button
-                onClick={() => {
-                  setShowDeleteDialog(false);
-                  setDeletePassword("");
-                  setDeleteMsg(null);
-                }}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-[#F3F4F6] text-[#6B7280] text-sm font-semibold hover:bg-[#E5E7EB] transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteAccount}
-                disabled={deleteLoading || !deletePassword}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {deleteLoading ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Trash2 size={14} />
-                )}
-                Delete Account
+      {deleting && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => !deleteBusy && setDeleting(false)}>
+          <div className="bg-white rounded-3xl w-full max-w-md p-7 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <span className="w-12 h-12 rounded-2xl bg-[#FEE2E2] text-[#DC2626] flex items-center justify-center"><AlertTriangle size={22} /></span>
+            <p className="text-lg font-semibold text-[#111827] mt-4">{t("prof.deleteTitle")}</p>
+            <p className="text-sm text-[#6B7280] mt-1">{t("prof.deleteBody")}</p>
+            <div className="mt-5"><PasswordInput value={deletePw} onChange={setDeletePw} placeholder={t("prof.yourPw")} autoComplete="current-password" /></div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button type="button" onClick={() => { setDeleting(false); setDeletePw(""); }} disabled={deleteBusy}
+                className="px-5 py-2.5 text-sm font-semibold text-[#374151]">{t("common.cancel")}</button>
+              <button type="button" onClick={deleteAccount} disabled={!deletePw || deleteBusy}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#DC2626] text-white text-sm font-semibold hover:bg-[#B91C1C] disabled:opacity-50">
+                {deleteBusy && <Loader2 size={14} className="animate-spin" />} {t("prof.deletePermanently")}
               </button>
             </div>
           </div>
