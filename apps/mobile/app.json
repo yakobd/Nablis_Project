@@ -25,11 +25,13 @@
         "POST_NOTIFICATIONS"
       ],
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1B2E6B"
       },
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro"
@@ -56,6 +58,14 @@
             "photo"
           ]
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "backgroundColor": "#1B2E6B"
+        }
       ]
     ],
     "experiments": {
@@ -66,6 +76,7 @@
       "eas": {
         "projectId": "84c037fa-43d6-438b-8d8f-b239f169f742"
       }
-    }
+    },
+    "icon": "./assets/icon.png"
   }
 }
